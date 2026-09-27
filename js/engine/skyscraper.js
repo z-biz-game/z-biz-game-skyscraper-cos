@@ -241,6 +241,19 @@ export const Rules = {
 
 export const RULE_LIST = Object.values(Rules);
 
+// Which rules a derivation script actually used, most-used first. The menu prints this per tier,
+// the verification harness asserts on it, and it is the only honest way to say "this board needed
+// 整行相容排列集" — the number comes out of the same list the hints are read from.
+export function rulesUsed(rows) {
+  const out = {};
+  for (const r of rows || []) {
+    const name = r.rule && r.rule.name;
+    if (!name) continue;
+    out[name] = (out[name] || 0) + 1;
+  }
+  return out;
+}
+
 // "第3行 左边 4、右边 2" — the pair of edge readings a whole-line deduction rests on. A hint that
 // cannot point at the clue it used is not a hint, so every rule text goes through here.
 export function cluePair(b, trackId) {
