@@ -48,3 +48,44 @@ jobs:
 
       - name: Entry files exist
         run: test -f index.html && grep -q '<canvas' index.html && grep -q 'js/main.js' index.html
+
+  # The four steps above are Node-side. `tools/verify.sh` is the fifth gate and, until this job
+  # existed, CI had never run it: 507 browser assertions per URL shape (first seed rules unique
+  # play conflict hint stats) measured 2026-09-28 on the author's machine, twice, and never once on
+  # a runner. A gate that is only ever run by hand is documentation, not a gate.
+  browser:
+    name: real browser gate (both URL shapes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        # 22, not 20: the CDP driver uses the global WebSocket/fetch that only exist from Node 22.
+        # On 20 the first attach dies and the job reports a missing browser, not a broken game.
+        with:
+          node-version: 22
+
+      - name: Browser gate, root shape
+        env:
+          WD_TIMEOUT: 900
+        run: bash tools/verify.sh
+
+      # Pages serves this repo under /z-biz-game-skyscraper-cos/, and a server rooted at the repo
+      # cannot tell a leading-slash import from a relative one: the same app 404s in production while
+      # every local run is green. Two other repos in this org have already been burned by exactly
+      # that, so the prefix shape is part of the gate rather than a footnote.
+      - name: Browser gate, prefix shape (how Pages serves us)
+        env:
+          WD_TIMEOUT: 900
+        run: |
+          root=$(mktemp -d)
+          ln -s "$GITHUB_WORKSPACE" "$root/z-biz-game-skyscraper-cos"
+          python3 -m http.server 5512 --bind 127.0.0.1 --directory "$root" &
+          SERVER=$!
+          trap 'kill $SERVER 2>/dev/null' EXIT
+          for i in $(seq 1 40); do
+            curl -fsS -m 2 "http://127.0.0.1:5512/z-biz-game-skyscraper-cos/" >/dev/null 2>&1 && break
+            sleep 0.25
+          done
+          curl -fsS -m 3 "http://127.0.0.1:5512/z-biz-game-skyscraper-cos/js/main.js" >/dev/null
+          curl -fsS -m 3 "http://127.0.0.1:5512/z-biz-game-skyscraper-cos/js/engine/count.js" >/dev/null
+          BASE_URL=http://127.0.0.1:5512/z-biz-game-skyscraper-cos/ bash tools/verify.sh
