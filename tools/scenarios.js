@@ -1202,5 +1202,258 @@
     return report({ cases, metDrift, unsound, badDrift, prefixMisses: misses, doomed: doomed ? `${doomed.i}:${doomed.v}` : 'none' });
   };
 
-  w.__scn = { first, seed, rules, unique, play, conflict };
+  // ---- 场景 7：提示只给"下一个可证事实"，而且一路推到底（零猜）--------------------------------------
+
+  const ruleNames = () => new Set(E().RULE_LIST.map((r) => r.name));
+  const solDigit = (row, i) => Number(row.solution[i]);
+
+  const hint = async () => {
+    const row = rowById(E().LEVELS[0].id);
+    const g = await startLevel(row.id);
+    const names = ruleNames();
+    const seenRules = [];
+    const written = [];
+    let charged = 0;
+    let spun = 0;
+    let stallHits = 0;
+    const textDrift = [];
+    const ruleDrift = [];
+    for (let k = 0; k < g.script.length + 4 && k < 400; k++) {
+      const cursorBefore = g.cursor;
+      const hintsBefore = g.hints;
+      const info = A().useHint();
+      if (!info) {
+        ck(`第 ${k + 1} 次按下去对局已经赢了（面上不再给提示，也不报错）`, g.status === 'won', JSON.stringify({ status: g.status, cursor: g.cursor }));
+        break;
+      }
+      if (info.stalled) {
+        eq(`脚本吃完后如实报"到头了"（第 ${k + 1} 次）`, g.cursor, g.script.length);
+        ck('到头了这句话非空', (info.text || '').length > 4, JSON.stringify(info));
+        eq('到头了时面板标题报的是"推到头了"而不是某条规则', text('#hint-rule'), '线索推到头了');
+        eq('面板正文搬的就是那句原话', text('#hint-line'), info.text);
+        spun++;
+        stallHits++;
+        if (stallHits >= 2) {
+          // 再按一次仍然只是重复这句话：不收钱、不推进、不假装还有货
+          const before = { h: g.hints, c: g.cursor };
+          const again = A().useHint();
+          ck('吃完脚本后继续按提示不会倒退也不会收费', !!again.stalled && g.hints === before.h && g.cursor === before.c, JSON.stringify({ again, hints: g.hints, cursor: g.cursor }));
+          break;
+        }
+        continue;
+      }
+      if (info.conflict) {
+        ck('一路顺着脚本走不该撞到冲突', false, JSON.stringify(info));
+        continue;
+      }
+      const src = g.script[cursorBefore];
+      ck(`第 ${k + 1} 次提示说的规则在引擎表里`, names.has(info.rule), info.rule);
+      seenRules.push(info.rule);
+      // 面板那句必须是规则自己写的那句，不是这层另写的摘要
+      const own = src.rule.text(g.board, src);
+      if (own !== text('#hint-line')) textDrift.push({ k, rule: info.rule, want: own.slice(0, 40), got: text('#hint-line').slice(0, 40) });
+      if (!text('#hint-rule').includes(info.rule) || !text('#hint-rule').includes(`第 ${info.level} 层`)) ruleDrift.push({ k, on: text('#hint-rule'), rule: info.rule, level: src.rule.level });
+      eq(`第 ${k + 1} 次提示的层号来自引擎记录`, info.level, src.rule.level);
+      if (info.charged) {
+        charged++;
+        eq(`第 ${k + 1} 次提示落了子就得收费`, g.hints, hintsBefore + 1);
+        eq('收费的那一次光标前移了', g.cursor, cursorBefore + 1);
+        if (src.kind === 'place') {
+          written.push(`${src.cell}:${src.value}`);
+          eq('提示写下的数就是答案里那个（可证事实，不是猜的）', A().valueOf(src.cell), solDigit(row, src.cell));
+        }
+      } else {
+        eq(`空转的那一次不收钱（第 ${k + 1} 次）`, g.hints, hintsBefore);
+        ck('空转也吃掉一行（不原地打转）', g.cursor > cursorBefore, `${cursorBefore} → ${g.cursor}`);
+        spun++;
+      }
+    }
+    ck('面板那句话逐字就是规则自己写的句子', textDrift.length === 0, JSON.stringify(textDrift.slice(0, 2)));
+    ck('面板的标题行带着规则名与层号', ruleDrift.length === 0, JSON.stringify(ruleDrift.slice(0, 2)));
+    ck('这一关真被提示推到了底', g.status === 'won' && E().complete(g.board, g.st.cell), g.status);
+    eq('提示收费次数 = 脚本里真正需要落的子（且没重复落同一格）', new Set(written).size, written.length);
+    ck(`吃完整个脚本共收 ${charged} 次钱、空转 ${spun} 次（都 <= 脚本长 ${g.script.length}）`, charged <= g.script.length && spun <= g.script.length, JSON.stringify({ charged, spun }));
+    eq('读数里的提示次数与内存一致', text('#stat-hints'), `${g.hints}`);
+    eq('提示脚本的总数读数与关卡烘的步数一致', text('#stat-script').split('/')[1], `${row.steps}`);
+
+    // 撤销不退费，也不倒读：撤掉一次提示落下的子，提示计数与光标都不许回退
+    const g2 = await startLevel(row.id);
+    let firstCharged = null;
+    for (let k = 0; k < 60 && !firstCharged; k++) {
+      const info = A().useHint();
+      if (info && info.charged && info.rule) firstCharged = info;
+    }
+    ck('找得到第一次收费的提示', !!firstCharged, JSON.stringify(firstCharged));
+    const hintsAfter = g2.hints;
+    const cursorAfter = g2.cursor;
+    await click('#btn-undo');
+    eq('撤销一次提示：字退回去了', A().valueOf(firstCharged.cell), 0);
+    eq('撤销不退提示费（否则撤到底就能拿"提示 0"的纪录）', g2.hints, hintsAfter);
+    eq('撤销不回卷光标（提示不会倒读同一条）', g2.cursor, cursorAfter);
+    eq('读数里的提示费还是那笔', text('#stat-hints'), `${hintsAfter}`);
+    const next = A().useHint();
+    ck('下一次提示说的是往后而不是刚撤掉的那条', !next.charged || next.cell !== firstCharged.cell || A().valueOf(next.cell) !== firstCharged.value, JSON.stringify({ cell: next.cell, rule: next.rule }));
+
+    // 零猜：20 关全部只靠提示（= 线索派生的脚本）能推到底，一子不差
+    const stuck = [];
+    const wrongWrite = [];
+    const overCharge = [];
+    let totalHints = 0;
+    for (const r of E().LEVELS) {
+      await startLevel(r.id);
+      const gg = A().game;
+      const res = A().solveWithLogic({ cap: 6000 });
+      const cells = Array.from(gg.st.cell).join('');
+      if (res.status !== 'won' || cells !== r.solution) stuck.push({ id: r.id, status: res.status, same: cells === r.solution });
+      if (E().verify(gg.board, gg.st.cell).length !== 0) wrongWrite.push(r.id);
+      if (gg.hints > r.steps) overCharge.push({ id: r.id, hints: gg.hints, steps: r.steps });
+      totalHints += gg.hints;
+    }
+    ck('出厂 20 关全部"只按提示、不猜"推到底，且落定的答案与烘的逐格相同', stuck.length === 0, JSON.stringify(stuck.slice(0, 3)));
+    ck('推到底之后独立验收 verify() 一条问题也没有', wrongWrite.length === 0, JSON.stringify(wrongWrite));
+    ck('提示收费永不超过这一关的脚本长（不重复教同一条）', overCharge.length === 0, JSON.stringify(overCharge.slice(0, 3)));
+
+    ck('本节无未捕获异常', errors.length === 0, errors.join(' | '));
+    A().engine.Store.reset();
+    return report({ levels: E().LEVELS.length, charged, spun, rulesUsed: new Set(seenRules).size, totalHints });
+  };
+
+  // ---- 场景 8：状态行与统计行的每个数都重算得出------------------------------------------------------
+
+  function noteErrorsOwn(board, grid, notes) {
+    const n = board.n;
+    const out = [];
+    const possible = (t, pos, v) => {
+      const fwd = [];
+      for (let k = 0; k < n; k++) fwd.push(grid[t.cells[k]]);
+      return permsFor(n).some((p) => {
+        if (p[pos] !== v) return false;
+        if (board.clue[t.idxA] !== NO_CLUE && seenFrom(p, false) !== board.clue[t.idxA]) return false;
+        if (board.clue[t.idxB] !== NO_CLUE && seenFrom(p, true) !== board.clue[t.idxB]) return false;
+        return fwd.every((val, k) => val === 0 || val === p[k]);
+      });
+    };
+    for (let i = 0; i < board.size; i++) {
+      if (grid[i] !== E().EMPTY || !notes[i]) continue;
+      for (let v = 1; v <= n; v++) {
+        if (!(notes[i] & (1 << v))) continue;
+        let ok = true;
+        for (const [tid, k] of board.cellTracks[i]) {
+          if (!possible(board.tracks[tid], k, v)) {
+            ok = false;
+            break;
+          }
+        }
+        if (!ok) out.push(`${i}:${v}`);
+      }
+    }
+    return out;
+  }
+
+  const stats = async () => {
+    const row = rowById(E().LEVELS[4].id); // 上手 4×4：数不多，够看出读数是不是活的
+    const g = await startLevel(row.id);
+    const n = g.w;
+    const size = n * n;
+    const tier = E().tierFor(row.tier);
+    eq('关卡名', text('#stat-name'), row.name);
+    eq('档位名', text('#stat-tier'), tier.name);
+    eq('尺寸读数带来源', text('#stat-size'), `${n}×${n} · 出厂关卡`);
+    eq('分数读数就是烘的那个测量值（一位小数）', text('#stat-score'), Number(row.score).toFixed(1));
+    eq('脚本总数读数', text('#stat-script'), `0/${row.steps}`);
+    eq('空盘已填', text('#stat-filled'), `0/${size}`);
+    eq('空盘剩余', text('#stat-remaining'), `${size}`);
+    eq('空盘对上的边', text('#stat-satisfied'), `0/${boardClues(g.board)}`);
+    ck('时间读数是 mm:ss 形状', /^\d{2}:\d{2}$/.test(text('#stat-time')), text('#stat-time'));
+
+    // 第一批墨是"干净的"：一处落子 + 一条正确候选 + 一条已被线索杀掉的候选
+    const v0 = solDigit(row, 0);
+    A().setDigit(v0);
+    A().tap(0, v0);
+    await click('#btn-mode-note');
+    A().setDigit(solDigit(row, 5));
+    await tapCell(5); // 答案里那个候选：正确的笔记，不该被判过期
+    A().setDigit(v0);
+    await tapCell(2); // 同一行已经写过这个数：这条候选必然过期
+    await click('#btn-mode-ink');
+    let own = verdictsOwn(g.board, g.st.cell);
+    const filledOwn = Array.from(g.st.cell).filter((v) => v !== E().EMPTY).length;
+    eq('已填 = 自己数的非空格子', text('#stat-filled'), `${filledOwn}/${size}`);
+    eq('剩余 = 空格子数', text('#stat-remaining'), `${size - filledOwn}`);
+    eq('对上的边 = 自己按全枚举数出来的边', text('#stat-satisfied'), `${own.met.size}/${boardClues(g.board)}`);
+    eq('对不上的边 = 引擎 diagnose 的条数', text('#stat-conflicts'), `${g.diag.violated.size}`);
+    ck('引擎报的边在自己的枚举里也真圆不回来（判据不漏判）', Array.from(g.diag.violated).every((i) => own.dead.has(i)),
+      JSON.stringify({ eng: Array.from(g.diag.violated), own: Array.from(own.dead) }));
+    eq('这一批墨里没有重复格', text('#stat-badcells'), '0');
+    const mineNote = noteErrorsOwn(g.board, g.st.cell, g.st.notes);
+    const engNote = new Set();
+    for (const e of g.diag.noteErrors) for (const v of e.values) engNote.add(`${e.cell}:${v}`);
+    ck(`自己这套"这一行/列已经装不下它"的判据（${mineNote.join(',')}）全部被引擎认账`, mineNote.length > 0 && mineNote.every((x) => engNote.has(x)), JSON.stringify({ mine: mineNote, eng: Array.from(engNote) }));
+    ck('正确的笔记不会被误报为过期（答案里那个候选不在判据里）', !engNote.has(`5:${solDigit(row, 5)}`), JSON.stringify(Array.from(engNote)));
+    eq('候选过期条数 = 引擎判据的条数（页面不自己数）', text('#stat-noteerrors'), `${g.diag.noteErrors.length}`);
+    eq('步数读数 = 落子与划候选的次数', text('#stat-moves'), `${g.moves}`);
+    eq('提示读数未被动过', text('#stat-hints'), '0');
+    eq('脚本光标未动（一次提示也没按）', text('#stat-script'), `0/${row.steps}`);
+    checkLine('带着过期候选的盘', A().state());
+
+    // 第二批墨：同一行再写一个一样的数 —— 冲突信号也该一起活起来
+    A().tap(1, v0);
+    own = verdictsOwn(g.board, g.st.cell);
+    eq('重复格 = 自己扫出来的格子数', text('#stat-badcells'), `${own.bad.size}`);
+    ck('重复的是刚写的那两格', own.bad.size === 2 && own.bad.has(0) && own.bad.has(1), JSON.stringify(Array.from(own.bad)));
+    ck(`对不上的边数跟着涨（同一行两个 ${v0}）`, g.diag.violated.size > 0, `${g.diag.violated.size}`);
+    eq('已填计数也更新（不是只刷了冲突那一项）', text('#stat-filled'), `${filledOwn + 1}/${size}`);
+    checkLine('写着重复的盘', A().state());
+    eq('对上的边仍按自己的枚举数', text('#stat-satisfied'), `${own.met.size}/${boardClues(g.board)}`);
+    const badBlocks = { conflicts: g.diag.violated.size > 0, badcells: g.diag.badCells.size > 0, noteerrors: g.diag.noteErrors.length > 0, satisfied: g.status !== 'won' && g.diag.violated.size > 0 };
+    for (const [id, want] of Object.entries(badBlocks)) {
+      eq(`统计块 #stat-${id} 的 bad 类跟着计数走`, $('#stat-' + id).closest('.stat').classList.contains('bad'), want);
+    }
+
+    // 全部读数与 game.state() 一一吻合（只有 syncStats 一个地方在写）
+    const s = A().state();
+    const map = {
+      '#stat-moves': `${s.moves}`,
+      '#stat-hints': `${s.hints}`,
+      '#stat-filled': `${s.filled}/${s.total}`,
+      '#stat-remaining': `${s.remaining}`,
+      '#stat-satisfied': `${s.satisfied}/${s.clues}`,
+      '#stat-conflicts': `${s.conflicts}`,
+      '#stat-badcells': `${s.badCells}`,
+      '#stat-noteerrors': `${s.noteErrors}`,
+      '#stat-script': `${s.cursor}/${s.script}`,
+      '#stat-name': s.name,
+      '#stat-tier': E().tierFor(s.tier).name,
+      '#stat-size': `${s.n}×${s.n} · 出厂关卡`,
+      '#stat-score': Number(s.score).toFixed(1),
+    };
+    const stale = Object.entries(map).filter(([sel, want]) => text(sel) !== want).map(([sel, want]) => `${sel}: 页面 ${text(sel)} / 应有 ${want}`);
+    ck(`${Object.keys(map).length} 项读数全部等于引擎 state() 重算值（没有一处写半截）`, stale.length === 0, stale.join(' | '));
+
+    // 时间是真的在走（同一块 DOM，两秒后必须换数）
+    const t0 = text('#stat-time');
+    await wait(1200);
+    const t1 = text('#stat-time');
+    ck('计时读数在走（mm:ss 会跳）', t0 !== t1, `${t0} → ${t1}`);
+    ck('elapsed 读数与内存计时同量级', Math.abs(A().elapsed() - (s.elapsedMs || 0)) < 4000 || A().elapsed() >= (s.elapsedMs || 0), JSON.stringify({ dom: t1, ms: A().elapsed() }));
+
+    // 把墨擦干净，所有计数必须一起归零（不是只擦格子）
+    let guardS = 0;
+    while (A().undo() !== null && guardS++ < 200);
+    eq('退干净后已填归零', text('#stat-filled'), `0/${size}`);
+    eq('退干净后对不上的边归零', text('#stat-conflicts'), '0');
+    eq('退干净后重复格归零', text('#stat-badcells'), '0');
+    eq('退干净后候选过期归零', text('#stat-noteerrors'), '0');
+    eq('退干净后状态行闭嘴', text('#state-line'), '');
+    for (const id of Object.keys(badBlocks)) {
+      eq(`退干净后 #stat-${id} 的 bad 类摘掉`, $('#stat-' + id).closest('.stat').classList.contains('bad'), false);
+    }
+
+    ck('本节无未捕获异常', errors.length === 0, errors.join(' | '));
+    A().engine.Store.reset();
+    return report({ n, filled: filledOwn, clues: boardClues(g.board), noteMine: mineNote.length, noteEngine: engNote.size, readouts: Object.keys(map).length });
+  };
+  const boardClues = (board) => Array.from(board.clue).filter((v) => v !== NO_CLUE).length;
+
+  w.__scn = { first, seed, rules, unique, play, conflict, hint, stats };
 })(window);

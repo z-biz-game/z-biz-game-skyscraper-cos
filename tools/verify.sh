@@ -30,7 +30,7 @@ HTTP_WANT=${HTTP_PORT:-5313}
 PREF_WANT=${PREFIX_PORT:-5323}
 CHROME=${CHROME_BIN:-}
 # tools/scenarios.js 里已注册的场景（顺序有讲究：续档配对 resume-a→b→c、脏存档 dirty-a→b→c）
-SCENARIOS_DONE="first seed rules unique play conflict"
+SCENARIOS_DONE="first seed rules unique play conflict hint stats"
 if [ -z "$CHROME" ]; then
   for c in "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
            "/Applications/Chromium.app/Contents/MacOS/Chromium" \
