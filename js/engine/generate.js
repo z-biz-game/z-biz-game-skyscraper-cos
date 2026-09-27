@@ -120,8 +120,11 @@ export function pruneClues(board, rand, target = 0) {
     const probe = createBoard({ n: board.n, clue });
     const dv = derive(probe);
     // progress must not fall: a deletion that lets the pencil path stall somewhere earlier is a
-    // board the player can no longer finish, so it goes straight back.
-    if (!dv.conflict && progress(dv) <= cur) {
+    // board the player can no longer finish, so it goes straight back. `progress` only ever goes
+    // down as clues leave (fewer writes, wider domains), so "not lower" here means "exactly the same
+    // derivation, cell for cell" — which for a board that started finished is the zero-guess promise
+    // re-checked on every single removal, not just on the board that ends up shipping.
+    if (!dv.conflict && progress(dv) >= cur) {
       kept--;
       cur = progress(dv);
       removed.push(i);
@@ -229,10 +232,16 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 // file fails the build if a rung stops landing inside its own band or the medians stop ordering.
 // `target` is how far the greedy deletion is pushed — the one axis this game has — and `tries` is
 // how many grids it may sample to land in band. `tries` comes straight out of the measured tail:
-// over 60 seeds per tier, the number of sampled grids needed to land in band peaked at 6 / 32 / 33 /
-// 131 / 630 for the five rungs, so each rung is given a few times its own worst case. Raising
-// `tries` buys reliability, never an easier board: the acceptance test is the same pencil path
-// either way, and a tier that cannot land in its band still reports failure rather than shipping.
+// over 60 seeds per tier (`makePuzzle('tail|<tier>|<j>', tier)`, Node 26.8.1, 2026-09-27), the number
+// of sampled grids needed to land in band peaked at 6 / 9 / 28 / 15 / 60 for the five rungs, with
+// medians of 2 / 2 / 7 / 3 / 18 and a worst single puzzle of 8 / 7 / 18 / 14 / 38 ms. Before pruneClues
+// was fixed — it was accepting deletions that left the pencil path *earlier* than it had been, so
+// most candidates were thrown away downstream — the same measurement read 6 / 32 / 33 / 131 / 630,
+// and `SAMPLES=24 npm run balance` was discarding 1 / 34 / 16 / 213 / 162 boards per 24 shipped as
+// unfinishable; that rejection count is 0 for every rung now. Each rung keeps several times its own
+// worst case anyway. Raising `tries` buys reliability, never an easier board: the acceptance test is
+// the same pencil path either way, and a tier that cannot land in its band still reports failure
+// rather than shipping.
 export const TIERS = [
   { key: 'novice', name: '初学', n: 4, target: 14, extras: 0, tries: 60, band: [42, 64] },
   { key: 'casual', name: '上手', n: 4, target: 9, extras: 0, tries: 90, band: [58, 80] },
