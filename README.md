@@ -55,6 +55,10 @@
   7 阶那一行就是这个仓不出 7×7 的全部理由。
 - 出厂 20 关：唯一解 20、铅笔推到底 20、朴素枚举同判 20；引擎单测 **1879 条断言全过、9 节**；
   浏览器闸**每形 8 场景 = 43+27+58+50+49+37+198+45 = 507 条**，两种 URL 形态各 507 条、0 失败。
+- 这道浏览器闸**从 `5c59352` 起才真的在 CI 里跑**：`browser` 作业的两个步骤（根形态、前缀形态）在 runner 上
+  各自 `success`，整个 job 59 s。在此之前 `.github/workflows/ci.yml` 的四个步骤全是 Node 侧的
+  ——`tools/verify.sh` 写过、本机绿过，但 CI 一次都没调用过它。本页上面所有 507 这条数现在有两个来源：
+  我的终端，和 runner 的日志。
 
 ### 这两套中位数**不可互换**
 
@@ -109,9 +113,14 @@
 
 - **Safari / Firefox / 移动端实机**：五道门禁只在**本机 headless Chrome**（`--headless=new`，1280×1024，dpr 1）
   跑过；`tools/verify.sh` 只找 Chrome 系可执行文件。跨浏览器与真实触屏**未验证**。
-- **已部署的 Pages 产物**：`git remote -v` 为空，本仓**还没有远端、没有推送过**，
-  所以 `BASE_URL=https://z-biz-game.github.io/z-biz-game-skyscraper-cos/ bash tools/verify.sh`（`tools/verify.sh:12`）
-  这一条**没有跑过**。线上产物状态：**支持但未验证**，不是"已验证"。
+- **已部署的 Pages 产物：这一条本轮从"未验证"变成了实测**（HEAD `5c59352`、2026-09-28 02:05 CST）：
+  `BASE_URL=https://z-biz-game.github.io/z-biz-game-skyscraper-cos/ bash tools/verify.sh` → 8 场景
+  **507 条、0 失败**，页内自己报 `base: /z-biz-game-skyscraper-cos/`、`cell 64`、`dpr 1`，`unique` 场景在真站上
+  仍报 `maxNodes 731218 / budget 4000000`，与本机同一张表。**这条也没被 CI 跑过**——runner 跑的是根形态与
+  `mktemp -d` + 符号链接搭出来的前缀形态，真站是另一条路径（`.github/workflows/ci.yml` 的 `browser` 作业）。
+  仍未验证的：那一次是**本机 headless Chrome 打线上产物**，不是 Safari / Firefox / 实机；
+  也没逐文件比对过 Pages 构建产物与仓内字节（`pages.yml` 的 `Assemble static site` 那一步决定线上有什么，
+  本文对它只有一个断言：上面那次跑的是真站返回的 HTML 与模块）。
 - **读屏与键盘无障碍**：`aria-live` 状态行、`aria-pressed` 键盘、方向键选格都在（`index.html:106`、`index.html:111-115`），
   也断言了 `--touch-min` 是 44px，但**没有用任何读屏器实测过**，也没有键盘-only 的完整通关实测。
 - **低端机时延 / 真实小屏几何**：本轮几何断言全部在 1280×1024 桌面窗口量到（`cell: 64`）。

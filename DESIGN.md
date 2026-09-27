@@ -182,7 +182,7 @@
 | 引擎保证 | `node tools/engine-test.mjs` | 1879 条断言 / 9 节；期望值是**纸上演算写死的字面量**，绝不从求解器读回来（`tools/engine-test.mjs:1-15`） |
 | 阶梯 | `node tools/balance.mjs` | 入带率 + 中位数严格递增 + 线索轴生效 + Stirling 行 + 每样本三套实现对拍。CI 口径是 `SAMPLES: "12"`（`.github/workflows/ci.yml:43`），文档口径是 24 |
 | 出厂重算 | `node tools/bake.mjs --check` | §6 的语义 + 逐字节两件事 |
-| 浏览器 | `bash tools/verify.sh` | 真 Chrome：DOM 几何、画布像素、真 localStorage。**两种形态各 8 场景 = 507 条**（`tools/verify.sh:33` 的注册表） |
+| 浏览器 | `bash tools/verify.sh` | 真 Chrome：DOM 几何、画布像素、真 localStorage。**两种形态各 8 场景 = 507 条**（`tools/verify.sh:33` 的注册表）。前四个 Node 闸从建仓起就在 CI 里跑，这一条不是——`browser` 作业是 `5c59352` 才加的，同一 SHA 的 runner 日志里两个步骤各自 `success` |
 
 `verify.sh` 为什么要把同一组场景跑两遍（根 `5313`、前缀 `5323/<repo>/`）：根形态是本地服务器能**意外**满足的形态，
 而 Pages 是 `/<repo>/` 前缀 —— 一个写死的 `/js/...` 在前缀下 404，而一次抛断的动态 import 会把注入脚本的**后半截**
@@ -273,10 +273,16 @@ play 49 + conflict 37 + hint 198 + stats 45 = 507 条`，0 失败。
    （这一条我按 `layoutFor()` 反解确认算术成立：`(343-24)/(6+2×0.62) = 44.06`），但**真机掉不掉穿仍未实测**。
 
 未验证（与 README 同一份，不重复解释）：Safari / Firefox / 移动端实机；
-**已部署的 Pages 产物**（`git remote -v` 为空，本仓还没有远端，
-`BASE_URL=https://z-biz-game.github.io/z-biz-game-skyscraper-cos/ bash tools/verify.sh` 这条**没有跑过** ——
-支持但未验证）；读屏与键盘-only 全流程；低端机时延与小屏几何；Electron 壳（本机无 `node_modules`、
+读屏与键盘-only 全流程；低端机时延与小屏几何；Electron 壳（本机无 `node_modules`、
 无 `package-lock.json`，从未安装或启动，只有 `node --check`）；WebAudio 实际出声；多标签并发写同一存档键。
+
+**Pages 这一条本轮从"未验证"改成了实测**（HEAD `5c59352`、2026-09-28 02:05）：远端已建、已推，
+`BASE_URL=https://z-biz-game.github.io/z-biz-game-skyscraper-cos/ bash tools/verify.sh` 跑出 8 场景
+**507 条、0 失败**，页内报 `base: /z-biz-game-skyscraper-cos/`（证明真站在前缀下、模块取到了），
+`unique` 场景在真站上仍是 `maxNodes 731218 / budget 4000000`。两条留着没改：
+那一次是**本机 Chrome 打线上产物**，跨浏览器与实机仍没人跑过；CI 跑的是根形态 + `ln -s` 搭出来的
+前缀形态（`browser` 作业两步在 runner 上各 `success`，job 59 s），**CI 里没有"打真站"这一步**，
+所以线上产物每次变更要靠推上去以后再手工跑一次，这是这套闸现在的真实形状。
 
 ## §11 复现这些数字
 
