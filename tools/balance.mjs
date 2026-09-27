@@ -20,7 +20,7 @@
 // quietly started shipping two-solution boards would fail here and not in the browser.
 
 import { createBoard, cluesFrom, solve } from '../js/engine/skyscraper.js';
-import { TIERS, makePuzzle, randomLatin, mix } from '../js/engine/generate.js';
+import { TIERS, makePuzzle, randomLatin, mix, PROOF_BUDGET } from '../js/engine/generate.js';
 import { countSolutions, countNaive } from '../js/engine/count.js';
 import { distribution } from '../js/engine/perm.js';
 
@@ -32,6 +32,12 @@ const BAND_FILL = Number(process.env.BAND_FILL || 0.75);
 // well under 10,000. `countSolutions` reports OVERBUDGET rather than guessing, and OVERBUDGET is a
 // failure here, not a pass — so the budget below has to cover the measured worst case with room to
 // spare, or the master tier's uniqueness would go unproven.
+//
+// This run's own re-check stays *stricter* than the generator's: generate.js proves every candidate
+// at PROOF_BUDGET = 40,000,000 nodes, and the measured worst board the generator has ever shipped
+// cost 13,506,834 (see the table in js/engine/generate.js). The 60,000,000 below is a second,
+// independent ceiling, so a shipped board that only got signed off because it squeaked under the
+// generator's own cap cannot pass here.
 const COUNT_BUDGET = Number(process.env.COUNT_BUDGET || 60000000);
 
 const q = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
@@ -92,7 +98,12 @@ for (const tier of TIERS) {
   const nodes = [];
   const depths = new Set();
   let inBand = 0;
-  const rej = { noLatin: 0, ambiguous: 0, stalled: 0 };
+  const rej = { noLatin: 0, ambiguous: 0, stalled: 0, unproven: 0, many: 0, none: 0, mismatch: 0 };
+  // what generate()'s own exhaustive gate did on this tier: how many candidate boards it handed to
+  // count.js, how many came back proved, and how many it threw out because the count never finished
+  // (OVERBUDGET) or came back MANY / NONE / cell-wise-different. Printed per tier as X/N below — a
+  // rejection rate is only useful if it is attributable to one rung of the ladder.
+  const gen = { handed: 0, proved: 0, nodes: 0, maxNodes: 0, puzzles: 0, maxPuzzleNodes: 0 };
   let sampled = 0;
   for (let k = 0; k < SAMPLES; k++) {
     const start = performance.now();
@@ -108,7 +119,22 @@ for (const tier of TIERS) {
     rounds.push(p.rounds);
     depths.add(p.depth);
     sampled += p.sampled || 0;
-    if (p.rejected) for (const key of Object.keys(rej)) rej[key] += p.rejected[key];
+    if (p.rejected) for (const key of Object.keys(rej)) rej[key] += p.rejected[key] || 0;
+    if (p.proof) {
+      gen.puzzles++;
+      gen.handed += p.proof.handed;
+      gen.proved += p.proof.proved;
+      gen.nodes += p.proof.nodes;
+      if (p.proof.maxNodes > gen.maxNodes) gen.maxNodes = p.proof.maxNodes;
+      if (p.proof.nodes > gen.maxPuzzleNodes) gen.maxPuzzleNodes = p.proof.nodes;
+    }
+    // The gate must actually have run: a puzzle that shipped without ever being handed to the
+    // independent prover means someone disconnected it, and "0 rejected" would then be vacuous.
+    check(p.proof && p.proof.handed >= 1 && p.proof.proved >= 1,
+      `${tier.key} 样本 ${k}: 出题器一次都没把候选盘交给独立穷举器（proof=${JSON.stringify(p.proof)}）`);
+    check(p.proof ? p.proof.proved === p.proof.handed - p.rejected.unproven - p.rejected.many - p.rejected.none - p.rejected.mismatch : false,
+      `${tier.key} 样本 ${k}: 穷举器的账对不上——交给它 ${p.proof.handed} 块、证完 ${p.proof.proved} 块，被拒的却记了 ${p.rejected.unproven + p.rejected.many + p.rejected.none + p.rejected.mismatch} 块`);
+    check(p.proof.maxNodes < p.proof.budget, `${tier.key} 样本 ${k}: 最贵一次证明用掉 ${p.proof.maxNodes} 节点，已经贴到出题预算 ${p.proof.budget} 的顶——这块盘是压着线过的，不是证完了`);
     if (p.score >= tier.band[0] && p.score <= tier.band[1]) inBand++;
     // independent uniqueness: the search counter must say UNIQUE, cell by cell, on every sample.
     // solve() is re-run here rather than trusted from the generator, so a stale `score` printed by
@@ -169,6 +195,7 @@ for (const tier of TIERS) {
     scores,
     sampled,
     rej,
+    gen,
   };
   byTier.set(tier.key, row);
   rows.push(row);
@@ -216,6 +243,26 @@ for (const r of rows) {
   console.log(`  ${r.name}（${r.n} 阶）: 采样 ${r.sampled} 个盘，全线索就推不动而丢的 ${r.rej.ambiguous}`
     + `（${(100 * r.rej.ambiguous / Math.max(1, r.sampled)).toFixed(1)}%），删到 target=${r.target} 后推不动而丢的 ${r.rej.stalled}`);
 }
+
+// ---- 独立穷举证明这一关自己拒了多少：每档 X/N，逐档印，不聚合-----------------------------
+//
+// 这一段是"唯一解"这句话的账本。出货前每块候选盘都要被 js/engine/count.js 数完全部解并判 UNIQUE，
+// OVERBUDGET（没数完）和 MANY / NONE / 逐格不一致一样是拒绝。拒绝率按档分开列，是因为只有分开才看得
+// 见"6 阶在撞预算、4 阶好好的"这种形状；聚合成一个总数就会把它藏起来。
+console.log(`\n== 独立穷举器（js/engine/count.js）在出题路径上的拒绝率，预算 ${PROOF_BUDGET} 节点/盘 ==`);
+console.log('  档位      出货题数  交给穷举的候选盘  证完   没数完   多解   无解  逐格不一致   拒绝率 X/N      最贵一次证明   单题最贵合计');
+for (const r of rows) {
+  const g = r.gen;
+  const rejN = r.rej.unproven + r.rej.many + r.rej.none + r.rej.mismatch;
+  console.log(`  ${r.name.padEnd(6)}${String(g.puzzles).padStart(7)}  ${String(g.handed).padStart(16)}${String(g.proved).padStart(8)}`
+    + ` ${String(r.rej.unproven).padStart(8)} ${String(r.rej.many).padStart(6)} ${String(r.rej.none).padStart(6)} ${String(r.rej.mismatch).padStart(9)}`
+    + `   ${(`${rejN}/${g.handed}`).padStart(9)} ${String(g.maxNodes).padStart(14)} ${String(g.maxPuzzleNodes).padStart(13)}`);
+  check(g.handed === g.proved + rejN, `${r.tier}: 穷举器记账不平（交给 ${g.handed} ≠ 证完 ${g.proved} + 拒绝 ${rejN}）`);
+  check(g.proved > 0, `${r.tier}: 一块盘都没有被独立穷举器证完，这一档的"唯一解"没有证据`);
+  check(g.maxNodes < PROOF_BUDGET, `${r.tier}: 有盘把 ${PROOF_BUDGET} 节点的出题预算跑到顶（最贵 ${g.maxNodes}），出货口径该重看了`);
+}
+console.log(`  说明：拒绝率是"候选盘里被独立穷举器拒掉的比重"，OVERBUDGET 一律计入拒绝，绝不计入通过；`
+  + `出货题数 = 这一档现场出的 ${SAMPLES} 题都出得来才算满。`);
 
 console.log(`\n== 结论 ${failures.length ? `：${failures.length} 项未过（${elapsed()}）` : `：门禁全过（${elapsed()}）`} ==`);
 for (const f of failures) console.log('  ✗ ' + f);

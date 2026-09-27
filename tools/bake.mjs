@@ -32,7 +32,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { NO_CLUE, createBoard, solve, verify, cluesFrom } from '../js/engine/skyscraper.js';
-import { TIERS, makePuzzle, randomLatin, mix } from '../js/engine/generate.js';
+import { TIERS, makePuzzle, randomLatin, mix, PROOF_BUDGET } from '../js/engine/generate.js';
 import { countSolutions, countNaive } from '../js/engine/count.js';
 import { distribution, permTable } from '../js/engine/perm.js';
 
@@ -48,7 +48,12 @@ const PER_TIER = Number(process.env.LEVELS_PER_TIER || 4);
 // has 576 of them, order 5 has 161,280 (~60 ms here), order 6 has over a million per fixed first
 // row. So the third, dumbest opinion is taken in full up to 5×5 and on the first row alone at 6×6.
 const NAIVE_FULL = 5;
-const COUNT_BUDGET = Number(process.env.COUNT_BUDGET || 4000000);
+// The bake side of the uniqueness proof runs at the *same* ceiling the generator proved the board at
+// (js/engine/generate.js's PROOF_BUDGET = 40,000,000 nodes, justified there by the measured 96-board
+// order-6 census whose worst shipped proof cost 13,506,834). Cheaper here would be a weaker second
+// opinion than the first: a board the generator proved in 13.5 M nodes would come back OVERBUDGET
+// from this file and read as "not unique" — which is a false alarm, and false alarms get ignored.
+const COUNT_BUDGET = Number(process.env.COUNT_BUDGET || PROOF_BUDGET);
 
 const failures = [];
 const check = (cond, message) => {
@@ -98,17 +103,39 @@ const levelName = (tier, j) => {
 
 // A tier's four boards: the first distinct clue sets this seed family produces that land inside the
 // tier's own band. Seeds are literal so the same 20 boards come out on every machine.
+//
+// Every makePuzzle call below already carries the generator's own exhaustive-proof ledger (`p.proof`:
+// how many candidate boards that seed handed to js/engine/count.js, how many came back UNIQUE, and
+// how many were thrown out for OVERBUDGET / MANY / NONE / a cell-wise disagreement). It is tallied
+// here per tier and printed by `--check` — this campaign was always re-proved after the fact by
+// measure(), but the *seeds on the way to* a level used to be unproven, and the rate at which the
+// prover refuses them is the number that says whether "unique" is being earned or assumed.
+const PROOF_LEDGER = {};
+const ledgerOf = (tier) => (PROOF_LEDGER[tier.key] ||= { calls: 0, handed: 0, proved: 0, unproven: 0, many: 0, none: 0, mismatch: 0, maxNodes: 0, puzzles: 0 });
+
 function campaign(tier) {
   const rows = [];
   const seen = new Set();
+  const led = ledgerOf(tier);
   for (let j = 0; rows.length < PER_TIER && j < PER_TIER * 12; j++) {
     const seed = `campaign|${tier.key}|${j}`;
     const p = makePuzzle(seed, tier.key);
     if (!p) throw new Error(`${tier.key}: 种子 ${seed} 造不出盘（生成器或阶梯需要重看）`);
+    led.calls++;
+    if (p.proof) {
+      led.handed += p.proof.handed;
+      led.proved += p.proof.proved;
+      led.unproven += p.rejected.unproven;
+      led.many += p.rejected.many;
+      led.none += p.rejected.none;
+      led.mismatch += p.rejected.mismatch;
+      if (p.proof.maxNodes > led.maxNodes) led.maxNodes = p.proof.maxNodes;
+    }
     if (p.score < tier.band[0] || p.score > tier.band[1]) continue;
     const key = encodeClue(p.board.clue);
     if (seen.has(key)) continue;
     seen.add(key);
+    led.puzzles++;
     const s = solve(p.board);
     const c = countSolutions(p.board, { cap: 2, budget: COUNT_BUDGET });
     const naive = p.n <= NAIVE_FULL
@@ -322,6 +349,21 @@ export const TIERS_META = ${lit(META)};
 `;
 }
 
+function printLedger(where) {
+  console.log(`\n  ${where}：每档 X/N 逐档列，聚合起来的一个数藏住了是哪一档在撞预算`);
+  console.log('    档位      走到的种子  入盘关卡  交给穷举的候选盘  证完  没数完  多解  无解  逐格不一致   拒绝率 X/N   最贵一次证明');
+  for (const tier of TIERS) {
+    const l = PROOF_LEDGER[tier.key] || { calls: 0, handed: 0, proved: 0, unproven: 0, many: 0, none: 0, mismatch: 0, maxNodes: 0, puzzles: 0 };
+    const rej = l.unproven + l.many + l.none + l.mismatch;
+    check(l.handed === l.proved + rej, `${tier.key}: 穷举器记账不平（交给 ${l.handed} ≠ 证完 ${l.proved} + 拒绝 ${rej}）`);
+    check(l.handed > 0, `${tier.key}: 这一档一颗候选盘都没交给独立穷举器，"唯一解"没有证据`);
+    check(l.maxNodes < COUNT_BUDGET, `${tier.key}: 最贵一次证明 ${l.maxNodes} 节点已经贴到预算 ${COUNT_BUDGET} 的顶`);
+    console.log(`    ${tier.name.padEnd(6)}${String(l.calls).padStart(9)} ${String(l.puzzles).padStart(7)}  ${String(l.handed).padStart(15)}`
+      + ` ${String(l.proved).padStart(6)} ${String(l.unproven).padStart(6)} ${String(l.many).padStart(5)} ${String(l.none).padStart(4)} ${String(l.mismatch).padStart(9)}`
+      + `   ${`${rej}/${l.handed}`.padStart(8)} ${String(l.maxNodes).padStart(13)}`);
+  }
+}
+
 function build() {
   const rowsByTier = {};
   const LEVELS = [];
@@ -373,6 +415,7 @@ if (CHECK) {
   }
   const onDisk = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8') : '';
   check(onDisk === text, onDisk ? 'js/data/levels.js 与 bake 现在要写出的内容不一致（跑一次 npm run bake 再提交）' : 'js/data/levels.js 不存在，跑 npm run bake');
+  printLedger('--check：出题侧独立穷举证明的账（OVERBUDGET 记为拒绝，绝不记为通过）');
   console.log(`\n  数学对照：可见数分布 = 第一类 Stirling 数；拉丁方数 ${JSON.stringify(PROOF.math.latin)}；6 阶定首行 ${PROOF.math.six.fixedFirstRow} 个`);
   console.log(`  总计：${PROOF.totals.levels} 关，出货时唯一解 ${PROOF.totals.unique}，铅笔推到底 ${PROOF.totals.finished}，朴素枚举同判 ${PROOF.totals.naiveAgree}`);
   console.log(failures.length ? `\n== bake --check 失败：${failures.length} 处 ==\n` + failures.map((f) => '  ✗ ' + f).join('\n') : `\n== bake --check 全过：印出的每个数字都从线索串重算出来了 ==`);
@@ -384,6 +427,7 @@ if (!fs.existsSync(path.dirname(OUT))) fs.mkdirSync(path.dirname(OUT), { recursi
 const before = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8') : '';
 fs.writeFileSync(OUT, text);
 console.log(`wrote ${path.relative(ROOT, OUT)}: ${LEVELS.length} 关 / ${text.length} 字节 ${before ? '(覆写)' : '(新建)'}`);
+printLedger('出题侧独立穷举证明的账（每档 X/N）');
 for (const tier of TIERS) {
   const rows = LEVELS.filter((r) => r.tier === tier.key);
   console.log(`  ${tier.name}（${tier.n}×${tier.n}）: ${rows.map((r) => `${r.score}分/${r.clues}线索`).join('  ')}`);

@@ -62,7 +62,7 @@ import {
 } from '../js/engine/skyscraper.js';
 import { permTable, compatible, distribution, visible, visibleBack, NO_CLUE as PERM_NO_CLUE, MAX_N as PERM_MAX_N } from '../js/engine/perm.js';
 import { countSolutions, countNaive, UNIQUE, MANY, NONE, OVERBUDGET } from '../js/engine/count.js';
-import { TIERS, tierFor, generate, makePuzzle, mix, randomLatin, pruneClues, resupply } from '../js/engine/generate.js';
+import { TIERS, tierFor, generate, makePuzzle, mix, randomLatin, pruneClues, resupply, PROOF_BUDGET } from '../js/engine/generate.js';
 import { Game, INK, NOTE } from '../js/ui/game.js';
 import { LEVELS, PROOF, TIERS_META, decodeClue, encodeClue, boardOfRow, decodeGrid, encodeGrid, CHAPTERS, puzzleFromLevel } from '../js/library.js';
 
@@ -737,6 +737,11 @@ sec('生成保证：出厂的 20 关与每一档现场出的题');
 
 const NAIVE_BUDGET = { 4: Infinity, 5: Infinity, 6: 2000000 };
 const CHECKED = { levels: 0, fresh: 0 };
+// The dearest proof seen anywhere in this file's independent recount (budget 60,000,000 below, i.e. a
+// ceiling *higher* than the generator's own PROOF_BUDGET). Printed at the end of the section and
+// gated against PROOF_BUDGET, so "the generator's budget still covers the tail" is a measured
+// statement re-checked on every run rather than a number copied into a comment once.
+let maxProvedNodes = 0;
 function auditPuzzle(label, board, opts = {}) {
   const n = board.n;
   const r = solve(board);
@@ -747,6 +752,7 @@ function auditPuzzle(label, board, opts = {}) {
   eq(`${label}：complete 认这个盘`, complete(board, r.derived), true);
   const c = countSolutions(board, { cap: 2, budget: 60000000 });
   eq(`${label}：回溯计数器判 UNIQUE`, c.status, UNIQUE);
+  if (c.nodes > maxProvedNodes) maxProvedNodes = c.nodes;
   if (c.first) {
     let differs = -1;
     for (let i = 0; i < c.first.length; i++) if (c.first[i] !== r.derived[i]) { differs = i; break; }
@@ -872,6 +878,19 @@ eq('20 关全部审过', CHECKED.levels, 20);
       ok(`${tier.key} 种子 ${s}：线索数不低于 target`, p.clues >= tier.target, `${p.clues}/${tier.target}`);
       ok(`${tier.key} 种子 ${s}：分数落在自己的带里`, p.score >= tier.band[0] && p.score <= tier.band[1], `${p.score} vs ${tier.band}`);
       ok(`${tier.key} 种子 ${s}：出货前确实采过样`, p.sampled >= 1 && p.gen >= 1, String(p.sampled));
+      // 出货这块盘是被独立穷举器证完的——不是"铅笔推得完所以大概唯一"。generate() 自己记账：
+      // 交给穷举器几块候选盘、证完几块、因什么理由拒了几块。这里三件事分开断言：
+      //   1) 这道门真的跑过（handed >= 1 且 proved >= 1），否则下面的账都是空的；
+      //   2) 账是平的（证完 + 四类拒绝 = 交给它数），没有一块盘悄悄走进"通过"那一侧；
+      //   3) 最贵的一次证明离预算顶还远——压着顶过线的盘等于没证完，只是恰好没撞上限。
+      ok(`${tier.key} 种子 ${s}：出题器确实把候选盘交给了独立穷举器`, !!p.proof && p.proof.handed >= 1 && p.proof.proved >= 1, JSON.stringify(p.proof));
+      if (p.proof) {
+        const rejN = p.rejected.unproven + p.rejected.many + p.rejected.none + p.rejected.mismatch;
+        eq(`${tier.key} 种子 ${s}：穷举器的账是平的（证完 + 被拒 = 交给它数）`, p.proof.handed, p.proof.proved + rejN);
+        eq(`${tier.key} 种子 ${s}：出货那块盘是被证完的（拒绝数为 0 时才谈得上出货）`, rejN, 0);
+        eq(`${tier.key} 种子 ${s}：出题侧用的就是全仓那一个预算`, p.proof.budget, PROOF_BUDGET);
+        ok(`${tier.key} 种子 ${s}：最贵一次证明没压着预算顶`, p.proof.maxNodes < p.proof.budget / 3, `${p.proof.maxNodes} vs ${p.proof.budget}/3`);
+      }
       eq(`${tier.key} 种子 ${s}：同一颗种子给同一个盘`, asString(makePuzzle(`test|${tier.key}|${s}`, tier.key).board.clue), asString(p.board.clue));
       auditPuzzle(`${tier.key}#${s}`, p.board, { baked: p.solution });
       // the planted grid is a Latin square whose edges are the printed clues
@@ -885,6 +904,26 @@ eq('20 关全部审过', CHECKED.levels, 20);
     }
   }
   eq('现场出货 15 盘', CHECKED.fresh, 15);
+}
+{
+  // "没数完"这一态必须是拒绝，不是通过。count.js 在预算花光时交回 OVERBUDGET 且交不出第一个解；
+  // 出题器把同一个态记进 rejected.unproven 并 continue（见 generate() 里那段门）。这里能直接测的是
+  // 前一半——计数器那一侧的说谎空间；后一半靠上面 15 盘的账平断言（handed = proved + 四类拒绝）兜住。
+  const hard = LEVELS.filter((l) => l.n === 6).map(boardOfRow);
+  ok('六阶出厂盘存在（这道门的实测对象）', hard.length > 0, String(hard.length));
+  for (const board of hard) {
+    const capped = countSolutions(board, { cap: 2, budget: 50 });
+    eq(`${board.n} 阶盘被掐住预算时判的是 OVERBUDGET`, capped.status, OVERBUDGET);
+    ok('OVERBUDGET 交不出解：它没说自己是唯一的那一个盘', capped.first === null, String(capped.first));
+    ok('OVERBUDGET 不等于 UNIQUE（拒绝态与通过态不是同一个词）', capped.status !== UNIQUE);
+    const full = countSolutions(board, { cap: 2, budget: PROOF_BUDGET });
+    ok('同一块盘放开到出题预算就证得完（拒绝不是因为盘不唯一，是因为没数完）', full.status === UNIQUE, `${full.status} / ${full.nodes} 节点`);
+    ok('出完的节点数确实超过那个 50 的小掐口', full.nodes > 50, String(full.nodes));
+  }
+  // 预算的余量是量出来的，不是抄来的：本节独立复算（60,000,000 顶）里最贵的一次证明，必须仍然
+  // 离出题预算 PROOF_BUDGET 有三个数量级关系之内 —— 见 js/engine/generate.js 的那两张实测表。
+  console.log(`  · 出题侧穷举预算 ${PROOF_BUDGET} 节点/盘；本节独立复算最贵一次证明 ${maxProvedNodes} 节点（${(PROOF_BUDGET / Math.max(1, maxProvedNodes)).toFixed(1)}× 余量）`);
+  ok('PROOF_BUDGET 对本节复算过的每一块盘都留了 3 倍以上余量', maxProvedNodes * 3 < PROOF_BUDGET, `${maxProvedNodes}×3 vs ${PROOF_BUDGET}`);
 }
 {
   // generate() aims at the band and says so; it never loosens the acceptance test to land there

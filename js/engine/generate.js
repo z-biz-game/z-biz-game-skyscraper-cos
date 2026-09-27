@@ -25,8 +25,44 @@
 // Difficulty then comes from the one knob the game actually has: how many of those edge numbers get
 // removed. A removal is kept only if the pencil path still finishes, so "unique" and "no guessing"
 // are the same test here, and js/engine/count.js exists to check the two have not drifted apart.
+//
+// That drift is exactly why the exhaustive counter is wired in *here*, on the way out of the
+// generator, and not only in tools/bake.mjs: the pencil path is a soundness *argument*, and an
+// argument can be wrong in a way the code cannot see in itself. `countSolutions` shares no table, no
+// line record, no sentinel and no reasoning rule with `solve()` — so a board only ships when a second,
+// deliberately independent machine has *finished counting its solutions* and handed back UNIQUE.
+// Counting is capped (`PROOF_BUDGET` below); a candidate that hits the cap comes back as OVERBUDGET,
+// which means "not counted", and is rejected as such. It is never, anywhere, treated as a pass.
 
 import { NO_CLUE, EMPTY, createBoard, cluesFrom, solve, derive, bit, pop } from './skyscraper.js';
+import { countSolutions, UNIQUE, MANY, NONE, OVERBUDGET } from './count.js';
+
+// The node ceiling every shipped board is proved against. One number, one place, so the runtime daily
+// board, the "random puzzle" button, the campaign seeds and `tools/balance.mjs` all aim at the same
+// promise rather than at four different budgets that happen to agree today.
+//
+// WHY 40,000,000 — measured twice, not guessed. Both measurements are this file's production path
+// (`makePuzzle(seed, tier.key)`) with the board then counted by `countSolutions(board, {cap: 2, budget})`
+// under a ceiling so high that nothing is capped, so the node figures below are *complete* counts.
+//
+//   A. 2026-09-28, seeds `scn|<tier.key>|<i>`, i = 0..7 (the eight seeds the ladder was first audited
+//      on): order-6 proofs cost 1,637,599 / 399,819 / 65,805 / 579,019 / 510,115 / 2,125,618 / 818,135
+//      / 141,124 nodes, worst 2,125,618 in 196 ms of wall time; the whole order-5 tier peaked at 9,680.
+//      A 400,000-node budget — the default in count.js — leaves 5 of those 8 order-6 boards unproven,
+//      and 2,000,000 still leaves one of them unproven. Wall clock is not the binding constraint,
+//      nodes are.
+//   B. 2026-09-28, 96 order-6 boards: 24 seeds in each of four families (`scn|master|<i>`,
+//      `campaign|master|<i>`, `balance-master-<i>`, `daily:2026-09-<d>`), every board the generator
+//      actually shipped, recounted to completion. Distribution of proof cost: p50 390,345 ·
+//      p75 806,209 · p90 1,770,719 · p95 3,395,743 · **max 13,506,834 nodes (= 1,350 ms)**. The
+//      widest order-5 sample of the same run peaked at 43,310 nodes.
+//
+// 40,000,000 is 3.0× the dearest board measured in B, 18.8× the dearest in A, and 924× the dearest
+// order-5 board; across all 104 candidate boards B handed to the prover, none came within 2.9× of the
+// cap. The cap is a *cost* ceiling, not a claim of sufficiency: a board that needs more than this
+// comes back OVERBUDGET and is rejected below, so the cap can make the generator work harder or, in
+// the worst case, refuse to ship — it can never make an uncounted board look proven.
+export const PROOF_BUDGET = 40000000;
 
 export function mix(seed) {
   let x = typeof seed === 'string' ? 2166136261 : seed >>> 0;
@@ -165,7 +201,14 @@ export function generate(opts = {}) {
   } = opts;
   let best = null;
   let sampled = 0;
-  let rejected = { noLatin: 0, ambiguous: 0, stalled: 0 };
+  // `unproven` is the OVERBUDGET bucket: a board the exhaustive counter could not finish counting.
+  // It sits next to `many`/`none`/`mismatch` on purpose — four ways the second machine can refuse to
+  // sign, all of them rejections, none of them ever rounded up into "probably fine".
+  let rejected = { noLatin: 0, ambiguous: 0, stalled: 0, unproven: 0, many: 0, none: 0, mismatch: 0 };
+  // what the independent prover actually did on this run, so a caller can print a rejection *rate*
+  // per tier instead of a single aggregate: `handed` candidates seen, `nodes` spent, `maxNodes` the
+  // dearest single proof, `over` how many of those hit the cap.
+  const proof = { handed: 0, proved: 0, nodes: 0, maxNodes: 0, over: 0, budget: PROOF_BUDGET };
   for (let k = 0; k < tries; k++) {
     const trial = `${seed}#${k}`;
     const rand = mix(trial);
@@ -200,6 +243,47 @@ export function generate(opts = {}) {
       rejected.stalled++;
       continue;
     }
+    // The independent exhaustive count, on the board the player would actually see, before it can be
+    // selected. `solve()` above is an *argument* that the pencil rules reach a full grid; this is a
+    // different machine answering the different question "how many completions does this clue set
+    // have at all". Both must agree, and the verdict has to be the terminal `UNIQUE` — a counter that
+    // ran out of nodes answers nothing, so OVERBUDGET is rejected here exactly like MANY is. No
+    // branch below accepts a board this function could not finish proving.
+    proof.handed++;
+    const c = countSolutions(board, { cap: 2, budget: PROOF_BUDGET });
+    proof.nodes += c.nodes;
+    if (c.nodes > proof.maxNodes) proof.maxNodes = c.nodes;
+    if (c.status === OVERBUDGET) {
+      proof.over++;
+      rejected.unproven++;
+      continue;
+    }
+    if (c.status === MANY) {
+      rejected.many++;
+      continue;
+    }
+    if (c.status === NONE) {
+      // the pencil path wrote a full grid that the counter says satisfies nothing. The two
+      // machines disagree about the rules themselves — this board goes nowhere.
+      rejected.none++;
+      continue;
+    }
+    // Anything but UNIQUE at this point would be an unknown verdict, and an unknown verdict is not a
+    // licence to ship either.
+    if (c.status !== UNIQUE) {
+      rejected.mismatch++;
+      continue;
+    }
+    // UNIQUE is not yet "this board": the one completion the counter enumerates has to be, cell by
+    // cell, the grid the pencil path wrote. Otherwise the generator would be shipping its answer and
+    // the prover would be proving a different puzzle.
+    let differs = -1;
+    for (let i = 0; i < p.derived.length; i++) if (c.first[i] !== p.derived[i]) { differs = i; break; }
+    if (differs >= 0) {
+      rejected.mismatch++;
+      continue;
+    }
+    proof.proved++;
     const offBand = band ? Math.abs(p.score - clamp(p.score, band[0], band[1])) : 0;
     const cand = {
       board,
@@ -221,8 +305,19 @@ export function generate(opts = {}) {
     if (!best || cand.offBand < best.offBand) best = cand;
     if (band && cand.offBand === 0) break;
   }
-  if (!best) return { ok: false, board: null, sampled, rejected, reason: '没找到既唯一又能纯逻辑推到底的盘面' };
-  return { ok: true, sampled, rejected, ...best };
+  if (!best) {
+    return {
+      ok: false,
+      board: null,
+      sampled,
+      rejected,
+      proof,
+      reason: rejected.unproven
+        ? `没找到既唯一又能纯逻辑推到底的盘面：有 ${rejected.unproven} 个候选盘穷举器在 ${PROOF_BUDGET} 节点内没数完（OVERBUDGET 不算通过）`
+        : '没找到既唯一又能纯逻辑推到底的盘面',
+    };
+  }
+  return { ok: true, sampled, rejected, proof, ...best };
 }
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
@@ -240,8 +335,8 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 // and `SAMPLES=24 npm run balance` was discarding 1 / 34 / 16 / 213 / 162 boards per 24 shipped as
 // unfinishable; that rejection count is 0 for every rung now. Each rung keeps several times its own
 // worst case anyway. Raising `tries` buys reliability, never an easier board: the acceptance test is
-// the same pencil path either way, and a tier that cannot land in its band still reports failure
-// rather than shipping.
+// the same pencil path *plus* the same exhaustive UNIQUE verdict either way (`PROOF_BUDGET` above), and
+// a tier that cannot land in its band still reports failure rather than shipping.
 export const TIERS = [
   { key: 'novice', name: '初学', n: 4, target: 14, extras: 0, tries: 60, band: [42, 64] },
   { key: 'casual', name: '上手', n: 4, target: 9, extras: 0, tries: 90, band: [58, 80] },
@@ -259,7 +354,11 @@ export function puzzleFromTier(tier, seed) {
 }
 
 // A puzzle is (seed, tier) and nothing else — the store persists those two, so this function has to
-// be a pure function of them. Wall-clock time must never enter a selection key (DESIGN.md §8).
+// be a pure function of them. Wall-clock time must never enter a selection key (DESIGN.md §8); the
+// exhaustive proof above is paid for in *nodes*, which are the same on every machine and every run,
+// so a board that ships proved ships proved identically in the browser, in node and in bake.
+// Null means no candidate in `tries` both finished by pencil and came back UNIQUE from count.js —
+// including "came back OVERBUDGET", which is a failure to prove and never a licence to ship.
 export function makePuzzle(seed, tierKey) {
   const tier = tierFor(tierKey);
   const r = puzzleFromTier(tier, seed);
