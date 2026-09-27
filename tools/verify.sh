@@ -29,6 +29,8 @@ CDP_WANT=${CDP_PORT:-9363}
 HTTP_WANT=${HTTP_PORT:-5313}
 PREF_WANT=${PREFIX_PORT:-5323}
 CHROME=${CHROME_BIN:-}
+# tools/scenarios.js 里已注册的场景（顺序有讲究：续档配对 resume-a→b→c、脏存档 dirty-a→b→c）
+SCENARIOS_DONE="first seed rules unique play conflict"
 if [ -z "$CHROME" ]; then
   for c in "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
            "/Applications/Chromium.app/Contents/MacOS/Chromium" \
@@ -206,7 +208,9 @@ run_shape() {
   echo "boot: skyscraper $boot at $BASE"
   if [ "$boot" = "nope" ] || [ -z "$boot" ]; then echo "window.skyscraper never appeared at $BASE" >&2; return 4; fi
 
-  for s in ${SCENARIOS:-first rules unique seed play conflict hint stats keyboard catalogue resume-a resume-b resume-c dirty-a dirty-b dirty-c touch geom}; do
+  # 默认跑已注册的那一组（每往 tools/scenarios.js 里加一组场景就把名字加进来）：`npm run verify`
+  # 在任何一次提交上都必须是绿的，所以还没写完的名字不放进默认列表，只放 SCENARIOS= 里手工跑。
+  for s in ${SCENARIOS:-$SCENARIOS_DONE}; do
     echo "=== [$shape] $s ==="
     node tools/playtest.cjs scenario "$s" 2>/tmp/skyscraper-$shape-$s.console.log | tail -1 | sed 's/^RESULT //' | python3 -c "
 import sys, json

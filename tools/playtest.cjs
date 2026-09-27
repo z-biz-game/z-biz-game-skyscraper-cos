@@ -159,7 +159,11 @@ async function main() {
       Object.defineProperty(document,'visibilityState',{get:()=>'visible',configurable:true});'ok'`);
     const out = await evaluate(`(async()=>{
       if (!window.__scn) throw new Error('scenarios.js never installed');
-      const r = await window.__scn[${JSON.stringify(arg)}]();
+      const fn = window.__scn[${JSON.stringify(arg)}];
+      if (typeof fn !== 'function') {
+        throw new Error('没有这个场景：' + ${JSON.stringify(arg)} + '（已注册：' + Object.keys(window.__scn).join(',') + '）');
+      }
+      const r = await fn();
       return JSON.stringify(r);
     })()`);
     // Console noise first, machine-readable line last: the parser in verify.sh takes the
