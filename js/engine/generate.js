@@ -12,10 +12,15 @@
 // a step these rules do not cover — a false reject costs one more try, a false accept would ship a
 // guessable puzzle.
 //
-// The measured cost of that wall (tools/balance.mjs prints it): a *random* order-6 grid has a unique
-// full clue set about 1 time in 40, and no random order-7 grid in a sample of 40 was solvable by
-// the pencil path at all. That is why the shipped size ladder stops at 6 and not at 7 — see
-// DESIGN.md §5 for the numbers and the reasoning.
+// The measured cost of that wall (`tools/balance.mjs` prints this table on every run, and
+// `npm run balance` is the gate): out of 120 random grids per size whose full 4n clue set is handed
+// to the pencil path, order-4 finishes 70 times (58.3%), order-5 53 times (44.2%), order-6 6 times
+// (5.0%) and order-7 **0 times** — a 7×7 tier therefore cannot ship without weakening either
+// "unique" or "推到底", and neither is on the table. Sizes 5 and 6 do ship; they just need many more
+// grids sampled before one lands, which is what the per-tier `tries` below are for (measured tail:
+// 6×6 needed up to 630 samples in a 60-seed run, so master is allowed 1,400 — about 2× headroom; the
+// same `SAMPLES=24` run timed a master board, uniqueness re-check included, at p50 38 ms / p90 194 ms).
+// See DESIGN.md §5 for the numbers and the reasoning.
 //
 // Difficulty then comes from the one knob the game actually has: how many of those edge numbers get
 // removed. A removal is kept only if the pencil path still finishes, so "unique" and "no guessing"
@@ -168,7 +173,7 @@ export function generate(opts = {}) {
       continue;
     }
     let board;
-    let clue;
+    let p;
     try {
       const full = createBoard({ n, clue: cluesFrom(n, solution) });
       // fully clued first: if even all 4n numbers cannot walk it, this grid admits no clue set that
@@ -178,18 +183,20 @@ export function generate(opts = {}) {
         continue;
       }
       const pruned = pruneClues(full, rand, target);
-      clue = resupply(full.clue, pruned.clue, pruned.removed, rand, extras);
+      const clue = resupply(full.clue, pruned.clue, pruned.removed, rand, extras);
       board = createBoard({ n, clue });
-      if (!solve(board).ok) {
-        rejected.stalled++;
-        continue;
-      }
+      // resupply only ever *adds* numbers back, so the pencil path cannot have degraded here — but
+      // the acceptance test still runs on the board the player will actually see, not on the one the
+      // pruner saw. One solve per candidate, reused for the score below.
+      p = solve(board);
     } catch {
       rejected.ambiguous++;
       continue;
     }
-    const p = solve(board);
-    if (!p.ok) continue;
+    if (!p.ok) {
+      rejected.stalled++;
+      continue;
+    }
     const offBand = band ? Math.abs(p.score - clamp(p.score, band[0], band[1])) : 0;
     const cand = {
       board,
@@ -221,14 +228,17 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 // observed this tier actually scoring (its printed quantile table is the evidence), and the same
 // file fails the build if a rung stops landing inside its own band or the medians stop ordering.
 // `target` is how far the greedy deletion is pushed — the one axis this game has — and `tries` is
-// how many grids it may sample to land in band, which the order-6 accept rate (5.5%, DESIGN.md §5)
-// forces to be far larger than the order-4 one.
+// how many grids it may sample to land in band. `tries` comes straight out of the measured tail:
+// over 60 seeds per tier, the number of sampled grids needed to land in band peaked at 6 / 32 / 33 /
+// 131 / 630 for the five rungs, so each rung is given a few times its own worst case. Raising
+// `tries` buys reliability, never an easier board: the acceptance test is the same pencil path
+// either way, and a tier that cannot land in its band still reports failure rather than shipping.
 export const TIERS = [
   { key: 'novice', name: '初学', n: 4, target: 14, extras: 0, tries: 60, band: [42, 64] },
-  { key: 'casual', name: '上手', n: 4, target: 9, extras: 0, tries: 60, band: [58, 80] },
-  { key: 'regular', name: '熟练', n: 5, target: 18, extras: 0, tries: 140, band: [108, 126] },
-  { key: 'sharp', name: '高阶', n: 5, target: 12, extras: 0, tries: 140, band: [127, 145] },
-  { key: 'master', name: '大师', n: 6, target: 18, extras: 0, tries: 260, band: [196, 240] },
+  { key: 'casual', name: '上手', n: 4, target: 9, extras: 0, tries: 90, band: [58, 80] },
+  { key: 'regular', name: '熟练', n: 5, target: 18, extras: 0, tries: 120, band: [108, 126] },
+  { key: 'sharp', name: '高阶', n: 5, target: 12, extras: 0, tries: 400, band: [127, 145] },
+  { key: 'master', name: '大师', n: 6, target: 18, extras: 0, tries: 1400, band: [196, 240] },
 ];
 
 export function tierFor(key) {

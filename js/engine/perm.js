@@ -2,8 +2,11 @@
 //
 // The central object of this game's pencil path is: *the set of orderings of one line that agree
 // with the clue written on the edge that line runs to*. Enumerating them is the honest thing to
-// do — n! rows, 24 for 4x4 up to 5040 for 7x7, 40320 for 8x8 — and the tier ladder stops at 7, so
-// a table is built once per board size and cached for the whole process.
+// do — n! rows, 24 for 4x4 up to 5040 for 7x7, 40320 for 8x8 — and the shipped ladder stops at 6,
+// so in practice a table is built once per board size the tier set names and cached for the whole
+// process. The 7x7/8x8 rows stay reachable because `MAX_N` is the *table's* limit, not the game's:
+// a bigger board is legal to hand to `createBoard`, it just has no tier that can generate one
+// (the measured wall in tools/balance.mjs is why — see DESIGN.md §5).
 //
 // `visible` below is written straight from the definition: walk the line from the viewing edge and
 // count strict record highs, because a tower of the same height cannot exist in the same line and
