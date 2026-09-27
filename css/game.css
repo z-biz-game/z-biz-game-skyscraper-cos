@@ -1,0 +1,452 @@
+/* Colours, spacing, radii and durations all come from js/theme.js via applyThemeVars(); the only
+   literals here are geometry (px sizes, grid columns, font weights). That is what keeps the canvas
+   and the stylesheet from drifting into two different-looking games — a written height is
+   `--info` in both places, so one edit in js/theme.js moves the board and the legend together.
+
+   The one property not already emitted by applyThemeVars() is `--touch-min`, which js/main.js hands
+   down from js/theme.js's own `Cell.minTouch` rather than restating here; it carries a 44px fallback
+   so the press targets hold their size even before the module has run. */
+
+[hidden] { display: none !important; }
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 62%, var(--surface) 100%);
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+body { touch-action: manipulation; }
+
+#app {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: var(--space-page) var(--space-page) var(--space-inner);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-card);
+  min-height: 100vh;
+}
+
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ---------- top bar ---------- */
+
+.topbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-card);
+}
+
+.brand h1 {
+  margin: 0;
+  font: 700 30px/1.1 var(--font-sans);
+  letter-spacing: 0.16em;
+}
+
+.brand .sub {
+  margin: 4px 0 0;
+  color: var(--ink-dim);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.top-actions { display: flex; gap: var(--space-gutter); }
+
+/* Every pressable thing clears the touch floor js/theme.js states (44 CSS px). In this game the
+   thing under the finger is a cell of the board, so a keyboard row that a thumb cannot hit is
+   not a shortcut, it is a trap. */
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  min-height: var(--touch-min, 44px);
+  min-width: var(--touch-min, 44px);
+  border-radius: var(--radius-button);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 10px 16px;
+  transition: background var(--dur-tap) var(--ease-ease), border-color var(--dur-tap) var(--ease-ease), transform var(--dur-tap) var(--ease-spring);
+}
+
+button:active { transform: translateY(1px); }
+button:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+button:disabled { color: var(--ink-faint); border-color: var(--line); cursor: not-allowed; }
+
+button.ghost:hover { border-color: var(--line-heavy); background: var(--surface-lift); }
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-top);
+  font-weight: 700;
+}
+
+button.primary:hover { background: var(--accent-edge); }
+
+button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+/* The app's only link-styled press is 清空存档, which wipes every record in the archive — exactly
+   the target that must not be a 12 px strip a thumb can only clip. It still reads as a text link:
+   the hit box reaches the touch floor js/theme.js states through min-height, and the glyph itself
+   stays small and underlined. */
+button.link {
+  border: 0;
+  background: none;
+  color: var(--ink-faint);
+  padding: 0 4px;
+  min-height: var(--touch-min, 44px);
+  display: inline-flex;
+  align-items: center;
+  text-decoration: underline;
+  font-size: 12px;
+}
+
+/* ---------- views ---------- */
+
+main { flex: 1; }
+
+.view { animation: rise var(--dur-base) var(--ease-ease) both; }
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.reduce-motion .view,
+.reduce-motion button { animation: none; transition: none; }
+
+/* ---------- menu ---------- */
+
+.menu-hero h2 {
+  margin: 0 0 6px;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.menu-hero p {
+  margin: 0;
+  max-width: 82ch;
+  color: var(--ink-dim);
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+
+.menu-hero p b { color: var(--ink); }
+.menu-hero p code { font-family: var(--font-mono); color: var(--accent); }
+
+.menu-cols {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) 1fr;
+  gap: var(--space-card);
+  margin-top: var(--space-card);
+  align-items: start;
+}
+
+.col { display: flex; flex-direction: column; gap: var(--space-inner); }
+
+.col-title {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 600;
+}
+
+.chapters { display: flex; flex-direction: column; gap: 8px; }
+
+.chapter {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  padding: 11px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.chapter.locked { border-style: dashed; color: var(--ink-faint); }
+
+.chapter-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.chapter-name { font-weight: 700; font-size: 14px; }
+.chapter-meta { color: var(--ink-faint); font-size: 11.5px; font-family: var(--font-mono); }
+.chapter-blurb { margin: 0; color: var(--ink-dim); font-size: 12px; line-height: 1.6; }
+
+.levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.levels button { padding: 10px 0; font-family: var(--font-mono); font-size: 13px; }
+.levels button.done { border-color: var(--success); color: var(--success); background: var(--surface-lift); }
+
+.tiers { display: flex; flex-direction: column; gap: 8px; }
+
+.tier {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-inner);
+  text-align: left;
+  padding: 13px 15px;
+}
+
+.tier .tier-name { font-weight: 700; }
+.tier .tier-note { color: var(--ink-dim); font-size: 12px; }
+.tier .tier-size { color: var(--ink-faint); font-size: 12px; }
+
+.daily,
+.resume {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-inner);
+  padding: 12px 14px;
+  border: 1px dashed var(--line-heavy);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.resume { border-color: var(--accent); background: var(--accent-soft); }
+
+.daily-txt,
+.resume-txt { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+
+.daily-txt span,
+.resume-txt span { color: var(--ink-dim); font-size: 12px; }
+
+.records {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.records li {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip);
+  padding: 9px 11px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.records b { display: block; font-size: 13px; margin-bottom: 3px; }
+.records span { color: var(--ink-dim); }
+
+.rules {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+}
+
+.rules li b { color: var(--ink); }
+.rules li .lv { font-family: var(--font-mono); color: var(--ink-faint); font-size: 11px; }
+
+.rules-note { margin: 6px 0 0; font-size: 11.5px; color: var(--ink-faint); line-height: 1.7; }
+.rules-note b { color: var(--ink-dim); }
+.rules-note code { font-family: var(--font-mono); color: var(--ink-dim); }
+
+/* ---------- game ---------- */
+
+#view-game {
+  display: grid;
+  grid-template-columns: 1fr minmax(272px, 320px);
+  gap: var(--space-card);
+  align-items: start;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  padding: var(--space-card);
+}
+
+.stage-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.puzzle-name { font-weight: 700; letter-spacing: 0.08em; }
+
+.chip {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip);
+  padding: 4px 9px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  background: var(--bg-bottom);
+}
+
+/* The wrap stretches to whatever the stage has left, because js/main.js sizes the canvas from
+   this element's own client width: the width the layout actually has and the width the renderer is
+   asked to fit are then one and the same measurement. Sizing from a subtracted guess instead is what
+   let a 6×6 master board slide to 42 px cells on a 390 px phone — under the 44 px touch floor
+   js/theme.js states. The frame inside shrink-wraps the canvas so #win-veil still covers the board
+   and not the empty margin beside it. */
+#board-wrap { display: grid; place-items: center; min-width: 0; }
+#board-frame { position: relative; }
+
+#board {
+  display: block;
+  border-radius: var(--radius-card);
+  /* The board takes drags, so the page must not steal the gesture for scrolling. */
+  touch-action: none;
+  cursor: pointer;
+}
+
+.conflict-line {
+  margin: 0;
+  min-height: 18px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--error);
+}
+
+.conflict-line.good { color: var(--accent); }
+
+#win-veil {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  /* Derived from a palette token rather than a second colour table: the veil is the page background
+     with alpha, and it has to read as the same room the board sits in. */
+  background: color-mix(in srgb, var(--bg-top) 84%, transparent);
+  border-radius: var(--radius-card);
+  animation: rise var(--dur-base) var(--ease-ease) both;
+}
+
+.win-card {
+  text-align: center;
+  padding: var(--space-card);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-card);
+  background: var(--surface-lift);
+  max-width: 86%;
+}
+
+.win-card h3 { margin: 0 0 6px; font-size: 19px; }
+.win-card p { margin: 0 0 8px; font-size: 13px; color: var(--ink-dim); }
+.win-record { color: var(--success) !important; font-weight: 700; }
+.win-actions { display: flex; gap: var(--space-gutter); justify-content: center; }
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-inner);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  padding: var(--space-card);
+}
+
+.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mode { text-align: center; }
+
+/* The keypad is built by js/main.js from the board's own 1..n, so a 4×4 never offers a 5. */
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.keypad button { font-family: var(--font-mono); font-size: 17px; padding: 0; }
+.keypad button small { display: block; font-size: 9px; color: var(--ink-faint); letter-spacing: 0.04em; }
+.keypad button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.keypad[hidden] { display: none; }
+
+.acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.acts .primary { grid-column: 1 / -1; }
+.acts .primary span { margin-left: 6px; }
+
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-inner);
+}
+
+.stat { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ink-dim); }
+.stat b { color: var(--ink); }
+.stat.bad b { color: var(--error); }
+
+.hint-box {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip);
+  padding: 11px 12px;
+  background: var(--bg-bottom);
+}
+
+.hint-box h4 {
+  margin: 0 0 5px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--hint);
+}
+
+.hint-box p { margin: 0; font-size: 12.5px; line-height: 1.65; color: var(--ink-dim); }
+.hint-box p b { color: var(--ink); }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 11.5px;
+  color: var(--ink-dim);
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-inner);
+}
+
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.sw { width: 11px; height: 11px; border-radius: var(--radius-cell); display: inline-block; }
+.sw-plain { background: var(--bg-bottom); box-shadow: inset 0 0 0 1px var(--line); }
+.sw-ink { background: var(--info); }
+.sw-pencil { background: var(--pencil-strong); }
+.sw-done { background: var(--success); }
+.sw-bad { background: var(--error); }
+/* A printed count is the given, not the player's: the legend shows it on the clue band's own
+   surface so it cannot be mistaken for a written height. */
+.sw-clue { background: var(--bg-top); box-shadow: inset 0 0 0 1px var(--line-heavy); color: var(--ink); }
+
+.keyhint { margin: 0; font-size: 11px; line-height: 1.7; color: var(--ink-faint); }
+.keyhint b { color: var(--ink-dim); font-weight: 600; font-family: var(--font-mono); }
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-card);
+  align-items: center;
+  color: var(--ink-faint);
+  font-size: 11.5px;
+  line-height: 1.7;
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-inner);
+}
+
+.foot code { font-family: var(--font-mono); color: var(--ink-dim); }
+
+@media (max-width: 900px) {
+  #view-game { grid-template-columns: 1fr; }
+  .menu-cols { grid-template-columns: 1fr; }
+  .foot { flex-direction: column; align-items: flex-start; }
+  .keypad { grid-template-columns: repeat(6, 1fr); }
+  .topbar { flex-wrap: wrap; align-items: flex-end; gap: var(--space-gutter); }
+  /* Every horizontal padding steps down one token rung on a phone. This is not cosmetics: a 6×6
+     board needs 343 CSS px of stage before its cells can stay 44 px wide (layoutFor() in
+     js/render/board.js), and at the desktop paddings a 390 px viewport only ever had 316. The
+     touch floor is the one thing here that is a rule rather than a preference. */
+  #app { padding: var(--space-gutter) var(--space-gutter) var(--space-inner); }
+  .stage, .panel { padding: var(--space-gutter); }
+}

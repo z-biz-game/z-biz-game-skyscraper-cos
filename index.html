@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#080B16" />
+<title>摩天楼 · Skyscraper 楼高可见数推理</title>
+<meta name="description" content="摩天楼 Skyscraper：四条边上的数字写着从那个方向望进去看得见几栋楼。每行每列是 1..n 的一种排列，每局唯一解、每局都能用铅笔规则推到底，提示只说线索真的逼得出的那一步。" />
+<!-- Inline icon: without it the browser probes the Pages domain root for /favicon.ico and logs a 404.
+     The mark is this game's own idea — three towers of different heights seen from one side, the
+     tallest one last, with the count that side would print (2) above it. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23080B16'/%3E%3Crect x='5' y='16' width='6' height='11' rx='1.4' fill='%237BB8FF'/%3E%3Crect x='13' y='11' width='6' height='16' rx='1.4' fill='%23F2F5FB'/%3E%3Crect x='21' y='6' width='6' height='21' rx='1.4' fill='%23FFC85C'/%3E%3Ctext x='6.4' y='5.2' fill='%23FFC85C' font-family='monospace' font-size='6.4' font-weight='700'%3E2%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="css/game.css" />
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <h1>摩天楼</h1>
+      <p class="sub">Skyscraper · 楼高可见数推理</p>
+    </div>
+    <div class="top-actions">
+      <button id="btn-sound" class="ghost" type="button" aria-pressed="true">音效 开</button>
+      <button id="btn-motion" class="ghost" type="button" aria-pressed="false">动效 全</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="view-menu" class="view">
+      <div class="menu-hero">
+        <h2>边上的数字写着：从那条边往里看，能看得见几栋楼</h2>
+        <p>
+          每行每列都是 <code>1..n</code> 的一个排列：<b>1 是最矮的楼，n 是最高的那栋</b>，谁也不会挡在它前面。
+          所以写着 <b>1</b> 的那条边一开口就说死了——第一格里站着的就是 <code>n</code> 楼；写着 <b><code>n</code></b>
+          的那条边则要求这一眼望进去一路升高。中间的数靠的是"这一行还剩哪几种摆法对得上两头的读数"，
+          几种摆法都同意的格子才能落子。
+          <b>这里没有运气题</b>：每一局都只有一个答案，而且每一局都不必回溯就能推到底——这两句话由
+          <code>node tools/engine-test.mjs</code> 与 <code>npm run balance</code> 在命令行里逐条断言，
+          难度分与档位区间都是量出来的，不是形容词。
+        </p>
+      </div>
+
+      <div class="menu-cols">
+        <div class="col">
+          <h3 class="col-title">出厂关卡（<span id="cleared-count" class="mono">0</span> 关已过）</h3>
+          <div id="chapter-list" class="chapters"></div>
+
+          <h3 class="col-title">现场出一题（同一档同一天是同一张盘）</h3>
+          <div id="tier-list" class="tiers"></div>
+
+          <div class="daily">
+            <div class="daily-txt">
+              <strong>日课</strong>
+              <span id="daily-meta">按日期轮换的一题</span>
+            </div>
+            <button id="btn-daily" class="ghost" type="button">今日</button>
+          </div>
+
+          <div id="resume-card" class="resume" hidden>
+            <div class="resume-txt">
+              <strong id="resume-name">未完的一局</strong>
+              <span id="resume-meta"></span>
+            </div>
+            <button id="btn-resume" class="primary" type="button">继续</button>
+          </div>
+        </div>
+
+        <div class="col">
+          <h3 class="col-title">纪录（同档先比提示次数，再比步数，最后比时间）</h3>
+          <ul id="record-list" class="records"></ul>
+
+          <h3 class="col-title" id="rule-title">铅笔路径的规则表</h3>
+          <ol id="rule-list" class="rules"></ol>
+          <p id="proof-note" class="rules-note"></p>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-game" class="view" hidden>
+      <div class="stage">
+        <div class="stage-head">
+          <span id="stat-name" class="puzzle-name">—</span>
+          <span id="stat-tier" class="chip">—</span>
+          <span id="stat-size" class="chip mono">—</span>
+          <span id="stat-time" class="chip mono">00:00</span>
+        </div>
+        <!-- Two boxes, on purpose: #board-wrap stretches to the stage and is the width js/main.js
+             measures, #board-frame shrink-wraps the canvas so the win veil covers the board and not
+             the empty space beside it. -->
+        <div id="board-wrap">
+          <div id="board-frame">
+            <canvas id="board" data-mode="ink" role="img" aria-label="摩天楼盘面：四条边是可见数，中间填楼高 1 到 n；点击换数，拖动一笔同一高度"></canvas>
+            <div id="win-veil" hidden>
+              <div class="win-card">
+                <h3>每一条边都数得上了</h3>
+                <p id="win-meta"></p>
+                <p id="win-record" class="win-record"></p>
+                <div class="win-actions">
+                  <button id="btn-again" class="primary" type="button">下一局</button>
+                  <button id="btn-menu-2" class="ghost" type="button">回选关</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p id="state-line" class="conflict-line" aria-live="polite"></p>
+      </div>
+
+      <aside class="panel">
+        <div class="modes" role="group" aria-label="落子方式">
+          <button id="btn-mode-ink" class="mode" type="button" aria-pressed="true" aria-label="落子：点击写高度">数字</button>
+          <button id="btn-mode-note" class="mode" type="button" aria-pressed="false" aria-label="候选：点击记铅笔候选">候选</button>
+        </div>
+
+        <div id="keypad" class="keypad" role="group" aria-label="楼高"></div>
+        <div class="acts">
+          <button id="btn-erase" class="ghost" type="button">清除这格</button>
+          <button id="btn-wipe" class="ghost" type="button">抹掉候选</button>
+        </div>
+
+        <div class="acts">
+          <button id="btn-hint" class="primary" type="button">提示<span class="mono" id="hint-count">0</span></button>
+          <button id="btn-undo" class="ghost" type="button">撤销</button>
+          <button id="btn-new" class="ghost" type="button">换一局</button>
+          <button id="btn-menu" class="ghost" type="button">回选关</button>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><span>步数</span><b id="stat-moves" class="mono">0</b></div>
+          <div class="stat"><span>提示</span><b id="stat-hints" class="mono">0</b></div>
+          <div class="stat"><span>已填</span><b id="stat-filled" class="mono">0/0</b></div>
+          <div class="stat"><span>还没填</span><b id="stat-remaining" class="mono">0</b></div>
+          <div class="stat"><span>对上的边</span><b id="stat-satisfied" class="mono">0/0</b></div>
+          <div class="stat"><span>冲突</span><b id="stat-conflicts" class="mono">0</b></div>
+          <div class="stat"><span>写坏的格</span><b id="stat-badcells" class="mono">0</b></div>
+          <div class="stat"><span>废候选</span><b id="stat-noteerrors" class="mono">0</b></div>
+          <div class="stat"><span>可推步数</span><b id="stat-script" class="mono">0</b></div>
+          <div class="stat"><span>难度实测</span><b id="stat-score" class="mono">—</b></div>
+        </div>
+
+        <div class="hint-box">
+          <h4 id="hint-rule">提示理由</h4>
+          <p id="hint-line">按 <b>提示</b>：说下一条线索逼得出的事实，以及它依据哪条边的哪个数。</p>
+        </div>
+
+        <div class="legend">
+          <span><i class="sw sw-plain"></i>还没填</span>
+          <span><i class="sw sw-ink"></i>写下的楼高</span>
+          <span><i class="sw sw-pencil"></i>铅笔候选</span>
+          <span><i class="sw sw-done"></i>这条边数得上了</span>
+          <span><i class="sw sw-bad"></i>撞破线索或重复</span>
+          <span><i class="sw sw-clue"></i>边上印出的可见数</span>
+        </div>
+        <p class="keyhint"><b>点击</b> 数字模式轮转 空→1→…→n→空 · <b>拖动</b> 用键盘上的数一笔抹过去 ·
+          <b>1..n</b> 选高度 · <b>回车</b> 写进选中的格 · <b>方向键</b> 移动选中格 · <b>X</b> 清除 ·
+          <b>N</b> 换候选模式 · <b>H</b> 提示 · <b>Z</b> 撤销 · <b>Esc</b> 回选关</p>
+      </aside>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>每局唯一解 · 每局可用铅笔规则推到底 · 提示只给推得出的一步 —— 出厂关卡的每个数字都能从线索串重算：
+      <code id="proof-line" class="mono">—</code>；其余由 <code>npm test</code> 与
+      <code>npm run bake -- --check</code> 逐格复核。</span>
+    <button id="btn-reset" class="link" type="button">清空存档</button>
+  </footer>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
