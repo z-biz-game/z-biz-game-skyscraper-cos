@@ -47,7 +47,7 @@ const KNIVES = [
     needle: 'band: [42, 64]',
     repl: 'band: [41, 63]',
     expect: '的 band 等于 TIERS 现值',
-    rc: '待跑',
+    rc: '1',
   },
   {
     id: 'K2', file: 'js/data/levels.js', group: 'D5',
@@ -55,7 +55,7 @@ const KNIVES = [
     needle: '"score": 62.2,',
     repl: '"score": 62.3,',
     expect: 'levels.js 印着的读数仍等于从 clue 串重算的读数',
-    rc: '待跑',
+    rc: '1',
   },
   {
     id: 'K3', file: 'README.md', group: 'D6',
@@ -63,7 +63,7 @@ const KNIVES = [
     needle: '断言 1976 · 通过 1976',
     repl: '断言 1975 · 通过 1975',
     expect: '四个数逐处等于 engine-test 现在打印的',
-    rc: '待跑',
+    rc: '1',
   },
   {
     id: 'K4', file: 'tools/verify.sh', group: 'D9',
@@ -71,7 +71,7 @@ const KNIVES = [
     needle: 'HTTP_WANT=${HTTP_PORT:-5313}',
     repl: 'HTTP_WANT=${HTTP_PORT:-5314}',
     expect: '两个端口等于脚本声明的 want',
-    rc: '待跑',
+    rc: '1',
   },
   {
     id: 'K5', file: 'js/audio/synth.js', group: 'D11',
@@ -79,7 +79,7 @@ const KNIVES = [
     needle: 'let ctx = null;\nlet master = null;',
     repl: "import { bakeMain } from '../../tools/bake.mjs'; // 破坏试验用的假反向 import（K5 立刻恢复）\nlet ctx = null;\nlet master = null;",
     expect: 'js/ 永不 import tools/',
-    rc: '待跑',
+    rc: '1',
   },
   {
     id: 'K6', file: 'tools/scenarios.js', group: 'D8',
@@ -87,7 +87,7 @@ const KNIVES = [
     needle: '"score":54.4',
     repl: '"score":54.5',
     expect: '全部由 Node 原样重算出来',
-    rc: '待跑',
+    rc: '1',
   },
 ];
 
