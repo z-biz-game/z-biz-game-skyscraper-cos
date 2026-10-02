@@ -37,7 +37,9 @@ const sh = (cmd, timeout) => {
 const git = (a) => sh(`git ${a}`, 30000).out.trim();
 
 // 刀谱：每把杀一组（D1 阶梯 / D5 出厂三票 / D6 引擎条数 / D8 夹具 / D9 接线与端口 / D11 反向 import）。
-// expect 是 doctest 里那条断言标签的子串——断言被改名或被删掉，预检就 die，而不是"这一把没红"。
+// expect 必须是 doctest 里那条断言**标签的原文**（反引号里那一串），预检只认标签，不认注释里的转述：
+// K3 第一版写的是转述「文档抄的引擎断言条数与节数逐处等于」，它在文件里确实存在（章节注释），于是预检放过了
+// 这一把，可 FAIL 行里印的是标签原文，点名永远对不上——刀明明把闸打红了，台账却判它"没证明过"。
 const KNIVES = [
   {
     id: 'K1', file: 'js/engine/generate.js', group: 'D1',
@@ -60,7 +62,7 @@ const KNIVES = [
     why: 'README 的复现命令注释里把引擎断言条数写成 1975：文档抄的那一份与 engine-test 自己打印的那一份差一条',
     needle: '断言 1976 · 通过 1976',
     repl: '断言 1975 · 通过 1975',
-    expect: '文档抄的引擎断言条数与节数逐处等于',
+    expect: '四个数逐处等于 engine-test 现在打印的',
     rc: '待跑',
   },
   {
@@ -106,8 +108,15 @@ for (const k of picked) {
   const hits = [...src.matchAll(new RegExp(k.needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))].length;
   if (hits !== 1) die(`${k.id} 的针在 ${k.file} 命中 ${hits} 次（必须恰好 1 次：打不中或打多了都不许跑）`);
   if (k.repl === k.needle) die(`${k.id} 的「改成」与针相同，这一刀不会改变任何东西`);
-  if (!gateSrc.includes(k.expect)) die(`${k.id} 期望点名的「${k.expect}」不在 tools/doctest.mjs 里（那条断言被改名或删掉了）`);
-  console.log(`  预检 ${k.id} · ${k.file} 针唯一命中 · 该杀 ${k.group}「${k.expect}」`);
+  // 点名对象必须是**标签原文**：把每条断言的第一个实参（反引号里以 `D<组号>` 开头那串）取出来当台账，
+  // 转述、注释、别的文件的字符串都不算。
+  const labels = gateSrc.match(/`D\d+[a-z]?[^`]*`/g) || [];
+  const mine = labels.filter((L) => new RegExp('^`' + k.group + '[a-z]?\\b').test(L) && L.includes(k.expect));
+  if (!mine.length) {
+    die(`${k.id} 期望点名的「${k.expect}」不是 ${k.group} 那一组任何一条断言标签里的原文——`
+      + `预检只认反引号里的标签（共解析到 ${labels.length} 条），转述不算：它可以在文件里存在却永远对不上 FAIL 行`);
+  }
+  console.log(`  预检 ${k.id} · ${k.file} 针唯一命中 · 该杀 ${mine[0].slice(1, 46).trim()}…`);
 }
 
 const results = [];
@@ -119,7 +128,10 @@ for (const k of picked) {
   // 只恢复这一个文件，用的是下刀之前读进内存的那份字节：本仓禁用 git checkout / restore / reset。
   writeFileSync(join(ROOT, k.file), before);
   const nowDirty = git('status --porcelain');
-  const failLines = r.out.split('\n').filter((l) => /^\s+FAIL\b/.test(l) && l.includes(k.expect));
+  // 点名要两条都对得上：断言编号属于这一把该杀的那一组，且 FAIL 行里有那条标签的原文。
+  // 只比散文会让"另一条恰好含同样词"蒙过去，只比编号会让"同组里另一条"蒙过去。
+  const idRe = new RegExp('FAIL\\s+' + k.group + '[a-z]?(?=\\s)');
+  const failLines = r.out.split('\n').filter((l) => /^\s+FAIL\b/.test(l) && idRe.test(l) && l.includes(k.expect));
   const named = failLines.length > 0;
   const red = r.rc !== 0 && named;
   console.log(`  ${k.id} rc=${r.rc} 点名=${named ? '是' : '否'} → ${red ? '红得对' : '这一刀没能把闸打红'}`);
