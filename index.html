@@ -103,6 +103,14 @@
           <span id="stat-tier" class="chip">—</span>
           <span id="stat-size" class="chip mono">—</span>
           <span id="stat-time" class="chip mono">00:00</span>
+          <!-- The three run controls live next to the clock they act on, and each one is a real
+               id js/main.js binds: 暂停 freezes the clock and the board, 重来这局 rebuilds the same
+               puzzle from scratch, 全屏 is the only thing allowed to ask the platform for it. -->
+          <div class="hud" role="group" aria-label="这一局的控制">
+            <button id="btn-pause" class="hud-btn" type="button" aria-pressed="false" aria-label="暂停这一局（P）" title="暂停 / 继续 · P"><span class="hud-glyph" aria-hidden="true">❙❙</span></button>
+            <button id="btn-restart" class="hud-btn" type="button" aria-label="重来这一局（R）" title="清空这局的重墨，从头再推 · R"><span class="hud-glyph" aria-hidden="true">↺</span></button>
+            <button id="btn-fullscreen" class="hud-btn" type="button" aria-pressed="false" aria-label="全屏（F）" title="全屏 · F"><span class="hud-glyph" aria-hidden="true">⤢</span></button>
+          </div>
         </div>
         <!-- Two boxes, on purpose: #board-wrap stretches to the stage and is the width js/main.js
              measures, #board-frame shrink-wraps the canvas so the win veil covers the board and not
@@ -110,6 +118,16 @@
         <div id="board-wrap">
           <div id="board-frame">
             <canvas id="board" data-mode="ink" role="img" aria-label="摩天楼盘面：四条边是可见数，中间填楼高 1 到 n；点击换数，拖动一笔同一高度"></canvas>
+            <div id="pause-veil" hidden>
+              <div class="pause-card">
+                <h3>这一局停在这里</h3>
+                <p id="pause-meta" class="mono">—</p>
+                <p class="pause-note">钟已停，盘面不接受落子；音效上下文一并挂起。</p>
+                <div class="pause-actions">
+                  <button id="btn-resume-play" class="primary" type="button">继续</button>
+                </div>
+              </div>
+            </div>
             <div id="win-veil" hidden>
               <div class="win-card">
                 <h3>每一条边都数得上了</h3>
@@ -173,7 +191,8 @@
         </div>
         <p class="keyhint"><b>点击</b> 数字模式轮转 空→1→…→n→空 · <b>拖动</b> 用键盘上的数一笔抹过去 ·
           <b>1..n</b> 选高度 · <b>回车</b> 写进选中的格 · <b>方向键</b> 移动选中格 · <b>X</b> 清除 ·
-          <b>N</b> 换候选模式 · <b>H</b> 提示 · <b>Z</b> 撤销 · <b>Esc</b> 回选关</p>
+          <b>N</b> 换候选模式 · <b>H</b> 提示 · <b>Z</b> 撤销 · <b>P</b> 暂停 · <b>R</b> 重来这局 ·
+          <b>M</b> 静音 · <b>F</b> 全屏 · <b>?</b> 翻页看键位 · <b>Esc</b> 回选关 · 选关页 <b>回车</b> 直接开局</p>
       </aside>
     </section>
   </main>

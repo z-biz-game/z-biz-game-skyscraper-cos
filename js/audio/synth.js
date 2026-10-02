@@ -5,6 +5,12 @@
 let ctx = null;
 let master = null;
 let enabled = true;
+// `held` is the pause / backgrounded latch. It is separate from `enabled` because the two are
+// released by different things: the player's mute switch, and the run's own state machine.
+let held = false;
+// Every oscillator this module has ever created. A muted or held tab must leave this number
+// untouched — that is the difference between "the volume is 0" and "the instrument is off".
+let voices = 0;
 
 function audio() {
   if (typeof AudioContext === 'undefined' && typeof webkitAudioContext === 'undefined') return null;
@@ -19,19 +25,30 @@ function audio() {
       return null;
     }
   }
-  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  // The auto-resume is here for the browser's autoplay gesture rule, and it must not undo a mute
+  // or a pause: without the `!held && enabled` guard, any later tone() would wake the context up
+  // behind the switch that put it to sleep.
+  if (ctx.state === 'suspended' && enabled && !held) ctx.resume().catch(() => {});
   return ctx;
+}
+
+// The single gate every sound passes through. Returning false means no node is created at all, so
+// a muted run does not keep an instrument running and burn CPU on envelopes nobody can hear.
+function gate() {
+  return enabled && !held;
 }
 
 // One oscillator with a two-point pitch glide and an exponential decay. Everything below is
 // a call to this; adding a second voice shape is how a game ends up with sounds that do not
 // belong to the same instrument.
 function tone({ f0, f1 = f0, dur = 0.12, type = 'sine', gain = 0.22, delay = 0 }) {
+  if (!gate()) return false;
   const ac = audio();
-  if (!ac || !enabled) return;
+  if (!ac) return false;
   const t = ac.currentTime + delay;
   const osc = ac.createOscillator();
   const vol = ac.createGain();
+  voices++;
   osc.type = type;
   osc.frequency.setValueAtTime(f0, t);
   osc.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
@@ -41,13 +58,51 @@ function tone({ f0, f1 = f0, dur = 0.12, type = 'sine', gain = 0.22, delay = 0 }
   osc.connect(vol).connect(master);
   osc.start(t);
   osc.stop(t + dur + 0.02);
+  return true;
+}
+
+// Taking the audio hardware down is what makes the switch a mute instead of a volume knob. The
+// promise is kept in both directions: suspending must not throw when the context was never built
+// (a browser with no AudioContext, or a page nobody has clicked yet).
+function park() {
+  if (!ctx) return;
+  try {
+    if (gate()) ctx.resume().catch(() => {});
+    else ctx.suspend().catch(() => {});
+  } catch {
+    /* a context that refuses to change state is not worth crashing a gesture over */
+  }
 }
 
 export const Sound = {
   setEnabled(v) {
     enabled = !!v;
+    park();
+    return enabled;
   },
   enabled: () => enabled,
+
+  // The mute switch, named for what it does. `sound` stays the stored setting (an archive written
+  // by an older build keeps working), and `muted` is its exact complement — no third flag that
+  // could disagree with the first.
+  setMuted(v) {
+    return this.setEnabled(!v);
+  },
+  muted: () => !enabled,
+  toggleMute() {
+    return this.setEnabled(!enabled);
+  },
+
+  // Held by the pause / tab-hidden path. Distinct from mute: the player's own switch is persisted,
+  // this one is a property of the moment and is never written to storage.
+  setHeld(v) {
+    held = !!v;
+    park();
+    return held;
+  },
+  held: () => held,
+  // For the harness: prove a muted or paused run creates no new oscillator nodes.
+  voices: () => voices,
 
   // The written digit is the only thing with a pitch of its own: height k plays the k-th step of
   // the same scale, so "a 5 went in" is audible without looking.

@@ -3,7 +3,7 @@
 // printed count, what a hint is allowed to say, and when the board counts as finished all come from
 // js/engine/skyscraper.js through js/ui/game.js. This file only moves ink and paints.
 
-import { Palette, Cell, applyThemeVars, setReduceMotion, systemPrefersReducedMotion } from './theme.js';
+import { Palette, Cell, applyThemeVars, setReduceMotion, systemPrefersReducedMotion, prefersReducedMotion as motionReduced } from './theme.js';
 import { Sound } from './audio/synth.js';
 import { Store } from './store.js';
 import { BoardView } from './render/board.js';
@@ -26,10 +26,7 @@ import {
 } from './library.js';
 import { dateSeed } from './engine/rng.js';
 
-const VERSION = '1.0.0';
-// How long a named cell stays ringed after a hint. Not a transition (the Motion tokens are those,
-// and they all sit in the 150–350 ms band) — it is the reading time for one sentence of prose.
-const PULSE_MS = 1600;
+const VERSION = '1.1.0';
 
 const $ = (sel) => document.querySelector(sel);
 const el = {
@@ -72,22 +69,67 @@ const el = {
   canvas: $('#board'),
   // The box the canvas is measured against — see availBox().
   wrap: $('#board-wrap'),
+  // Fullscreen is requested on #app rather than on <html>: #app owns the page padding and the
+  // safe-area insets, so the fullscreen board keeps the very layout a phone sees.
+  app: $('#app'),
+  pauseVeil: $('#pause-veil'),
+  pauseMeta: $('#pause-meta'),
+  btnPause: $('#btn-pause'),
+  btnRestart: $('#btn-restart'),
+  btnFullscreen: $('#btn-fullscreen'),
 };
 
 const view = new BoardView(el.canvas);
 let game = null;
 let pulse = null;
 let stroke = null;
-let pulseTimer = 0;
-let startedAt = 0;
 let baseElapsed = 0;
-let ticker = 0;
 let shown = 'menu';
+let paused = false;
+let clockRunning = false;
+let rafId = 0;
+// 0 = "还没喂过任何一帧" 的哨兵，不是时间戳：见 update() 里的 dt 首帧口径。
+let lastFrameAt = 0;
+let dirty = false;
+let lastShownSecond = -1;
 
-// A run's clock is (what the archive said when the board was reopened) + (time since this window
-// opened it), so 继续 does not hand out a fresh timer, and closing the tab does not erase one.
-const clock = () => baseElapsed + (startedAt ? Date.now() - startedAt : 0);
-const running = () => !!startedAt;
+// ---- one frame loop, dt everywhere ---------------------------------------------------------
+// The run used to be timed by `setInterval(…, 1000)` and the hint ring by a `setTimeout`: both are
+// wall-clock, and both kept running while the board was paused or the tab was hidden. Everything
+// that moves is now advanced by one fixed-step accumulator, so a 30 Hz phone and a 120 Hz
+// display agree to the last decimal on how far a run has got — the decay below is applied per
+// *step*, and a step is always SIM_STEP seconds.
+const SIM_STEP = 1 / 60;
+const MAX_STEPS_PER_FRAME = 8;
+// Tolerance on the step boundary — see the accumulator loop in update().
+const STEP_EPS = 1e-9;
+// How long a named cell stays ringed after a hint, in virtual seconds. Not a transition (the
+// Motion tokens are those, and they all sit in the 150–350 ms band) — it is the reading time for
+// one sentence of prose.
+const PULSE_S = 1.6;
+const PULSE_PERIOD = 0.9; // one breath of the ring
+// Per 1/60 s, so the amplitude after N steps is the same number at any refresh rate. Chosen so
+// the ring has faded to ~0.35 by the time its window closes — gone enough to stop pulling the eye,
+// there enough that the last glance still finds the cell a hint named.
+const PULSE_DAMP = 0.989;
+
+const sim = {
+  frames: 0,
+  frameDt: 0, // seconds the last frame reported
+  accumulator: 0, // virtual seconds not yet consumed by a fixed step
+  steps: 0, // fixed steps taken since load
+  animClock: 0, // virtual seconds of animation rendered
+  runSeconds: 0, // virtual seconds this run has been on the clock
+  pulseAge: 0,
+  pulsePhase: 0,
+  pulseScale: 1,
+};
+
+// A run's clock is (what the archive said when the board was reopened) + (virtual seconds since
+// this window opened it), so 继续 does not hand out a fresh timer, and a paused board stops
+// counting — the number that ranks a record is time looked at, not time elapsed.
+const clock = () => baseElapsed + Math.round(sim.runSeconds * 1000);
+const running = () => clockRunning;
 
 function fmtMs(ms) {
   const s = Math.floor(ms / 1000);
@@ -99,6 +141,79 @@ function setStat(id, text, bad) {
   el[id].textContent = text;
   const box = stat(id);
   if (box) box.classList.toggle('bad', !!bad);
+}
+
+function stepSim(s) {
+  sim.animClock += s;
+  // Paused freezes *everything* that moves: the run's clock, the hint ring's breath, its timeout.
+  // The accumulator above keeps filling, which is what makes the freeze frame-rate independent
+  // rather than a slow leak.
+  if (paused) return;
+  if (clockRunning && game && game.status !== 'won') {
+    sim.runSeconds += s;
+    dirty = true;
+  }
+  if (!pulse) return;
+  sim.pulseAge += s;
+  if (sim.pulseAge >= PULSE_S) {
+    pulse = null;
+    sim.pulseAge = 0;
+    sim.pulseScale = 1;
+    dirty = true;
+    return;
+  }
+  if (!motionReduced()) {
+    sim.pulsePhase = (sim.pulsePhase + s / PULSE_PERIOD) % 1;
+    sim.pulseScale *= Math.pow(PULSE_DAMP, s * 60);
+  }
+  dirty = true;
+}
+
+// The rAF callback body, factored out so a harness can feed it a virtual clock and settle the
+// frame-rate question with numbers instead of adjectives.
+function update(now) {
+  sim.frames++;
+  // `lastFrameAt === 0` is a sentinel, not a timestamp: the first frame reports dt 0 instead of
+  // "since the epoch", so a harness whose virtual clock starts at 0 loses a frame nobody notices.
+  const elapsed = lastFrameAt ? (now - lastFrameAt) / 1000 : 0;
+  lastFrameAt = now;
+  // A throttled tab hands back one huge dt on return. Clamping bounds the catch-up instead of
+  // running thousands of fixed steps inside a single frame.
+  sim.frameDt = Math.min(0.25, Math.max(0, elapsed));
+  sim.accumulator += sim.frameDt;
+  let guard = 0;
+  // STEP_EPS absorbs the ms→s representation error: 1000/60/1000 is not bit-identical to 1/60, so
+  // a bare `>= SIM_STEP` would let 60 Hz skip a step one frame in while 120 Hz skips it another —
+  // a visible 16 ms per-3 s drift between refresh rates, i.e. exactly what this loop exists to kill.
+  while (sim.accumulator + STEP_EPS >= SIM_STEP && guard++ < MAX_STEPS_PER_FRAME) {
+    sim.accumulator = Math.max(0, sim.accumulator - SIM_STEP);
+    sim.steps++;
+    stepSim(SIM_STEP);
+  }
+  // Anything past the cap is dropped rather than banked: a two-minute backgrounded tab must not
+  // spend its first visible second replaying it.
+  if (sim.accumulator > SIM_STEP * MAX_STEPS_PER_FRAME) sim.accumulator = 0;
+  const secs = Math.floor(clock() / 1000);
+  if (secs !== lastShownSecond) {
+    lastShownSecond = secs;
+    el.time.textContent = fmtMs(clock());
+    dirty = true;
+  }
+  if (dirty) {
+    dirty = false;
+    draw();
+  }
+}
+
+function loop(now) {
+  rafId = requestAnimationFrame(loop);
+  update(now);
+}
+
+function startLoop() {
+  if (rafId) return rafId;
+  rafId = requestAnimationFrame(loop);
+  return rafId;
 }
 
 // ---- which board an opening gets ---------------------------------------------
@@ -146,6 +261,9 @@ function draw() {
     pulse,
     cursor: game.selected,
     preview: stroke && stroke.items.length ? { cells: stroke.items.map((s) => s.cell) } : null,
+    // The ring's breath comes from the fixed-step loop rather than from a CSS transition, so it
+    // freezes with the pause and holds the same shape at 30 Hz and at 120 Hz.
+    pulseFx: { scale: sim.pulseScale, phase: sim.pulsePhase, age: sim.pulseAge / PULSE_S },
   });
 }
 
@@ -197,19 +315,16 @@ function flushResume() {
 }
 
 function startClock() {
-  startedAt = Date.now();
-  clearInterval(ticker);
-  ticker = setInterval(() => {
-    el.time.textContent = fmtMs(clock());
-    if (pulse) draw();
-  }, 1000);
+  sim.runSeconds = 0;
+  lastShownSecond = -1;
+  clockRunning = true;
+  startLoop();
 }
 
 function stopClock() {
   baseElapsed = clock();
-  startedAt = 0;
-  clearInterval(ticker);
-  ticker = 0;
+  sim.runSeconds = 0;
+  clockRunning = false;
 }
 
 // ---- the keypad and the two pen modes ----------------------------------------------------------
@@ -238,7 +353,7 @@ function syncKeypad() {
 }
 
 function setMode(value) {
-  if (!game) return value;
+  if (blocked() || !game) return value;
   game.mode = value;
   $('#btn-mode-ink').setAttribute('aria-pressed', String(value === INK));
   $('#btn-mode-note').setAttribute('aria-pressed', String(value === NOTE));
@@ -258,7 +373,7 @@ function setDigit(v) {
 // marks the selected cell; in 数字 mode it writes the height exactly — which is what makes the
 // cycle-on-tap shortcut and the exact-write shortcut coexist.
 function pressDigit(v) {
-  if (!game || game.status === 'won') return null;
+  if (blocked() || !game || game.status === 'won') return null;
   setDigit(v);
   const cell = game.selected;
   if (cell < 0) return null;
@@ -266,17 +381,17 @@ function pressDigit(v) {
 }
 
 function eraseCell() {
-  if (!game || game.status === 'won' || game.selected < 0) return null;
+  if (blocked() || !game || game.status === 'won' || game.selected < 0) return null;
   return settle(game.put(game.selected, EMPTY));
 }
 
 function wipeNotes() {
-  if (!game) return null;
+  if (blocked() || !game) return null;
   return settle(game.wipeNotes());
 }
 
 function undo() {
-  if (!game) return null;
+  if (blocked() || !game) return null;
   const step = game.undo();
   if (!step) return null;
   clearPulse();
@@ -310,7 +425,7 @@ function settle(step) {
 }
 
 function useHint() {
-  if (!game || game.status === 'won') return null;
+  if (blocked() || !game || game.status === 'won') return null;
   const info = game.hint();
   if (!info) return null;
   // Whether this hint cost anything is the engine's business: game.hint() only calls commit() for a
@@ -323,9 +438,11 @@ function useHint() {
 }
 
 function clearPulse() {
-  clearTimeout(pulseTimer);
-  pulseTimer = 0;
   pulse = null;
+  sim.pulseAge = 0;
+  sim.pulsePhase = 0;
+  sim.pulseScale = 1;
+  dirty = true;
 }
 
 function showHint(info) {
@@ -339,25 +456,23 @@ function showHint(info) {
     el.hintLine.textContent = info.conflict;
     pulse = { cell: info.cell, color: Palette.error };
     Sound.conflict();
-    schedulePulse();
+    beginPulse();
     return;
   }
   el.hintRule.textContent = `规则：${info.rule}（第 ${info.level} 层）`;
   el.hintLine.textContent = info.why;
   pulse = { cell: info.cell, clueIdx: info.clueIdx };
   if (info.charged) Sound.hint();
-  schedulePulse();
+  beginPulse();
 }
 
-function schedulePulse() {
-  const mine = pulse;
-  clearTimeout(pulseTimer);
-  pulseTimer = setTimeout(() => {
-    if (pulse === mine) {
-      pulse = null;
-      draw();
-    }
-  }, PULSE_MS);
+// Re-arms the ring's virtual timer. The loop's stepSim() is what ages it out, so the ring holds
+// for exactly PULSE_S virtual seconds at any refresh rate — and freezes while paused.
+function beginPulse() {
+  sim.pulseAge = 0;
+  sim.pulsePhase = 0;
+  sim.pulseScale = 1;
+  dirty = true;
 }
 
 // ---- win / records -----------------------------------------------------------------------------
@@ -384,6 +499,123 @@ function onWin() {
   renderResumeCard();
 }
 
+// ---- pause / restart / fullscreen --------------------------------------------------------------
+
+// The one string the harness and the frame probe read to know where the player actually is.
+function phaseName() {
+  if (shown !== 'game') return 'menu';
+  if (paused) return 'paused';
+  if (game && game.status === 'won') return 'won';
+  return 'playing';
+}
+
+// Nothing that changes the ink is allowed through while paused or outside a board. The veil covers
+// the canvas, but the keyboard, the panel buttons and `window.skyscraper` all reach these functions
+// directly — so the refusal lives here, once, rather than in CSS.
+const blocked = () => paused || shown !== 'game';
+
+// Pausing is not an overlay painted over a live board: the run's clock stops, the hint ring's
+// breath stops, the audio context is put to sleep, and every gesture that could move ink is
+// refused. Resuming hands back the same board, the same marks and the same elapsed time — nothing
+// is re-derived, and nothing is re-timed.
+function setPaused(next) {
+  const want = !!next && shown === 'game' && (!game || game.status !== 'won');
+  if (want === paused) return paused;
+  paused = want;
+  if (paused) {
+    // Fold the run's virtual seconds into the banked elapsed *before* the loop stops counting them.
+    baseElapsed = clock();
+    sim.runSeconds = 0;
+    clockRunning = false;
+    Sound.setHeld(true);
+    el.pauseMeta.textContent = `${fmtMs(baseElapsed)} · ${game ? game.moves : 0} 步 · 提示 ${game ? game.hints : 0} 次`;
+    el.pauseVeil.hidden = false;
+    flushResume();
+  } else {
+    // Mute is the player's own switch and survives a resume; `held` was this pause's, so it clears.
+    Sound.setHeld(false);
+    clockRunning = !!game && game.status !== 'won';
+    sim.runSeconds = 0;
+    lastShownSecond = -1;
+    el.pauseVeil.hidden = true;
+  }
+  syncPauseButton();
+  dirty = true;
+  return paused;
+}
+
+function syncPauseButton() {
+  const b = el.btnPause;
+  if (!b) return;
+  const glyph = b.querySelector('.hud-glyph');
+  if (glyph) glyph.textContent = paused ? '▶' : '❙❙';
+  b.setAttribute('aria-pressed', String(paused));
+  b.classList.toggle('on', paused);
+  b.setAttribute('aria-label', paused ? '继续这一局（P）' : '暂停这一局（P）');
+}
+
+// 重来这局. It re-enters through openPuzzle() with the *same* puzzle, which is what makes it a
+// reset rather than a wipe: openPuzzle builds a fresh Game (engine ink, pencil marks, the undo
+// stack, the hint cursor and the move/hint counters all reconstructed from the puzzle), clears the
+// pulse and the in-flight stroke, zeroes the banked elapsed and the run's virtual seconds, hides
+// both veils, rebuilds the keypad for this board's 1..n, and re-arms the clock.
+function restartRun() {
+  if (!game) return null;
+  const puzzle = game.puzzle;
+  setPaused(false);
+  return openPuzzle(puzzle);
+}
+
+function fullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+// Bound to a button that exists in the HUD (#btn-fullscreen) and to the F key. On iOS the request
+// only survives inside a user activation, so a keyboard-only path would be a promise the platform
+// does not keep; and the webkit prefix is not decoration — without it an iPad answers nothing.
+function toggleFullscreen() {
+  if (fullscreenElement()) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) Promise.resolve(exit.call(document)).catch(() => {});
+    return false;
+  }
+  const node = el.app || document.documentElement;
+  const req = node.requestFullscreen || node.webkitRequestFullscreen || node.webkitRequestFullScreen;
+  if (!req) return false;
+  Promise.resolve(req.call(node, { navigationUI: 'hide' })).catch(() => {});
+  return true;
+}
+
+function syncFullscreen() {
+  const on = !!fullscreenElement();
+  const b = el.btnFullscreen;
+  if (b) {
+    b.setAttribute('aria-pressed', String(on));
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-label', on ? '退出全屏（F）' : '全屏（F）');
+  }
+  document.body.classList.toggle('fullscreen', on);
+  // The board is sized from #board-wrap's content box, and fullscreen changes that box without
+  // always firing a resize.
+  draw();
+  return on;
+}
+
+// The game's own teaching surface: the hint panel already says what a clue claims and what a rule
+// proved, so the key map is written there rather than into a modal nobody reads.
+const CONTROL_LINES = [
+  '点击/触摸 换数 · 拖动 用键盘上的数一笔抹过去 · 点边上的数 问它说了什么',
+  '1..n 选高度 · 回车/空格 写进选中格 · 方向键 移动选中格 · X 清除 · W 抹候选 · N 换候选模式',
+  'H 提示 · Z 撤销 · P 暂停 · R 重来这局 · M 静音 · F 全屏 · Esc 回选关',
+];
+let controlAt = -1;
+function showControls() {
+  controlAt = (controlAt + 1) % CONTROL_LINES.length;
+  el.hintRule.textContent = `玩法与键位 ${controlAt + 1}/${CONTROL_LINES.length}`;
+  el.hintLine.textContent = CONTROL_LINES[controlAt];
+  return CONTROL_LINES[controlAt];
+}
+
 // ---- opening a board ---------------------------------------------------------------------------
 
 // `resume` is the already-sanitised save from Store.resume(); it is applied only to a board that
@@ -391,10 +623,15 @@ function onWin() {
 function openPuzzle(puzzle, resume = null) {
   if (!puzzle) return null;
   game = new Game(puzzle);
+  paused = false;
+  Sound.setHeld(false);
   clearPulse();
   stroke = null;
   el.winVeil.hidden = true;
+  el.pauseVeil.hidden = true;
+  syncPauseButton();
   baseElapsed = 0;
+  sim.runSeconds = 0;
   if (resume && resume.cells === puzzle.n * puzzle.n) {
     game.load(resume.ink, resume.notes);
     game.moves = resume.moves || 0;
@@ -402,10 +639,12 @@ function openPuzzle(puzzle, resume = null) {
     game.cursor = 0;
     baseElapsed = resume.elapsedMs || 0;
   }
+  // `show` first, then the mode: setMode() refuses to run while the board is not on screen (see
+  // blocked()), so opening a board had to enter the view before it could raise a pen.
   buildKeypad();
+  show('game');
   setMode(INK);
   game.select(0);
-  show('game');
   startClock();
   el.hintRule.textContent = '提示理由';
   el.hintLine.innerHTML = '按 <b>提示</b>：说下一条线索逼得出的事实，以及它依据哪条边的哪个数。';
@@ -464,7 +703,11 @@ function show(which) {
   el.viewMenu.hidden = shown !== 'menu';
   el.viewGame.hidden = shown !== 'game';
   if (shown === 'menu') {
+    // A pause belongs to a board. Leaving for the menu folds the frozen seconds into the archive
+    // and takes the veil down, so 继续 rebuilds from a save rather than from a suspended state.
+    if (paused) setPaused(false);
     stopClock();
+    Sound.setHeld(false);
     renderMenu();
   }
   if (shown === 'game') draw();
@@ -632,12 +875,15 @@ function renderDailyCard() {
 }
 
 function applySettings() {
-  Sound.setEnabled(!!Store.setting('sound'));
+  // `sound` is the stored setting and `muted` is its exact complement — one fact, two spellings,
+  // so an archive written before the mute switch existed still means the same thing.
+  Sound.setMuted(!Store.setting('sound'));
   const reduce = !!Store.setting('reduceMotion') || systemPrefersReducedMotion();
   setReduceMotion(!!Store.setting('reduceMotion'));
   document.body.classList.toggle('reduce-motion', reduce);
-  $('#btn-sound').setAttribute('aria-pressed', String(!!Store.setting('sound')));
-  $('#btn-sound').textContent = Store.setting('sound') ? '音效 开' : '音效 关';
+  const btn = $('#btn-sound');
+  btn.setAttribute('aria-pressed', String(!Sound.muted()));
+  btn.textContent = Sound.muted() ? '音效 关' : '音效 开';
   $('#btn-motion').setAttribute('aria-pressed', String(!!Store.setting('reduceMotion')));
   $('#btn-motion').textContent = reduce ? '动效 省' : '动效 全';
 }
@@ -660,7 +906,7 @@ function unpreview(s = stroke) {
 }
 
 function pointerDown(ev) {
-  if (!game || game.status === 'won') return;
+  if (blocked() || !game || game.status === 'won') return;
   const clue = view.clueAt(ev.clientX, ev.clientY);
   if (clue) {
     // Tapping a printed count says what that count is a claim about — read off the board, not
@@ -677,7 +923,7 @@ function pointerDown(ev) {
       el.hintLine.textContent = `从这一边望进 ${track ? game.board.trackName(track.id) : '这条线'}，看得见 ${v} 栋楼——${v === 1 ? '第一格就是最高那栋' : v === game.w ? '这一眼必须一路升高' : '中间的格得对得上这一眼能数出几栋'}。`;
     }
     pulse = { clueIdx: i };
-    schedulePulse();
+    beginPulse();
     draw();
     return;
   }
@@ -707,6 +953,7 @@ function pointerMove(ev) {
 }
 
 function pointerUp() {
+  if (paused) { stroke = null; return null; }
   if (!stroke || !game) return null;
   const s = stroke;
   stroke = null;
@@ -758,6 +1005,10 @@ $('#btn-again').addEventListener('click', () => {
   openTier(p.tier);
 });
 $('#btn-daily').addEventListener('click', openDaily);
+$('#btn-pause').addEventListener('click', () => setPaused(!paused));
+$('#btn-restart').addEventListener('click', restartRun);
+$('#btn-fullscreen').addEventListener('click', toggleFullscreen);
+$('#btn-resume-play').addEventListener('click', () => setPaused(false));
 $('#btn-resume').addEventListener('click', () => {
   const r = Store.resume();
   // No origin seed means no way to rebuild *that* board: the generator is deterministic in its seed,
@@ -765,11 +1016,16 @@ $('#btn-resume').addEventListener('click', () => {
   if (!r || !r.seed) return null;
   return begin({ resume: r });
 });
-$('#btn-sound').addEventListener('click', () => {
-  Store.setSetting('sound', !Store.setting('sound'));
+// One place flips the switch, so the button, the M key and the harness cannot drift apart.
+function toggleMute() {
+  Store.setSetting('sound', Sound.muted());
   applySettings();
-  if (Store.setting('sound')) Sound.note();
-});
+  // The confirmation blip is after the switch moved, and applySettings has already re-opened the
+  // gate — so it is audible exactly when the player has just asked for sound.
+  if (!Sound.muted()) Sound.note();
+  return Sound.muted();
+}
+$('#btn-sound').addEventListener('click', toggleMute);
 $('#btn-motion').addEventListener('click', () => {
   Store.setSetting('reduceMotion', !Store.setting('reduceMotion'));
   applySettings();
@@ -785,8 +1041,26 @@ $('#btn-reset').addEventListener('click', () => {
 window.addEventListener('keydown', (ev) => {
   if (ev.target && /input|textarea/i.test(ev.target.tagName)) return;
   const k = ev.key;
+  const lower0 = k.toLowerCase();
+  // M and F mean the same thing on either view — they are about the room, not the board.
+  if (lower0 === 'm') {
+    toggleMute();
+    return;
+  }
+  if (lower0 === 'f') {
+    toggleFullscreen();
+    return;
+  }
   if (shown === 'menu') {
     if (/^[1-5]$/.test(k)) openTier(TIERS[Number(k) - 1].key);
+    else if (k === 'Enter' || k === ' ') {
+      // 回车/空格 开局：whatever the resume card is offering first, else the rung the player last
+      // stood on, else the factory rung. A dead Enter is the thing that makes a keyboard-only
+      // player conclude the page is broken.
+      const r = Store.resume();
+      if (r && r.seed) begin({ resume: r });
+      else openTier(game ? game.puzzle.tier : TIERS[0].key);
+    } else if (k === '?') renderMenu();
     return;
   }
   if (k === 'Escape') {
@@ -798,6 +1072,21 @@ window.addEventListener('keydown', (ev) => {
   // 写这一格 and 换一格.
   if (k === ' ' || k.startsWith('Arrow')) ev.preventDefault();
   const lower = k.toLowerCase();
+  // While paused the board refuses ink, but the controls that end the pause — or that are about
+  // the room rather than the run — still answer.
+  if (lower === 'p') {
+    setPaused(!paused);
+    return;
+  }
+  if (lower === 'r') {
+    restartRun();
+    return;
+  }
+  if (k === '?') {
+    showControls();
+    return;
+  }
+  if (paused) return;
   if (lower === 'h') useHint();
   else if (lower === 'z') undo();
   else if (lower === 'n') setMode(game.mode === INK ? NOTE : INK);
@@ -826,8 +1115,22 @@ function moveSelection(k) {
 }
 
 window.addEventListener('resize', draw);
+['fullscreenchange', 'webkitfullscreenchange'].forEach((type) =>
+  document.addEventListener(type, syncFullscreen),
+);
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') flushResume();
+  if (document.visibilityState === 'hidden') {
+    flushResume();
+    // A hidden tab stops painting, so the loop's dt would come back as one huge frame. Pausing on
+    // hide is what keeps the run's clock meaning "time looked at" instead of "time the tab lived".
+    if (shown === 'game' && !paused) setPaused(true);
+    Sound.setHeld(true);
+  } else {
+    Sound.setHeld(paused);
+    // Do not resume the run, but do drop the stale frame boundary, or the first visible frame
+    // reports the whole hidden stretch as its dt.
+    lastFrameAt = 0;
+  }
 });
 window.addEventListener('pagehide', flushResume);
 
@@ -837,6 +1140,8 @@ document.documentElement.style.setProperty('--touch-min', `${Cell.minTouch}px`);
 applyThemeVars();
 applySettings();
 renderMenu();
+syncPauseButton();
+startLoop();
 
 const surface = {
   version: VERSION,
@@ -845,6 +1150,19 @@ const surface = {
     return game;
   },
   shown: () => shown,
+  phase: phaseName,
+  // The loop's own numbers. A harness feeds update() a virtual clock and reads these back; that is
+  // the only way "frame-rate independent" can be settled with digits instead of adjectives.
+  sim,
+  update,
+  stepSim,
+  paused: () => paused,
+  setPaused,
+  restartRun,
+  toggleFullscreen,
+  toggleMute,
+  muted: () => Sound.muted(),
+  showControls,
   show,
   begin,
   openTier,
@@ -859,29 +1177,32 @@ const surface = {
   wipeNotes,
   mode: { INK, NOTE },
   // The harness commits through the same paths a pointer release does, so a scenario that passes
-  // here has driven the real state machine rather than a copy of it.
+  // here has driven the real state machine rather than a copy of it. These three are that same
+  // door from the outside, so they honour the same `blocked()` the keys and the pointer honour:
+  // a paused or won board refuses input through *every* handle, not just the visible ones.
   tap(i, value) {
-    if (!game) return null;
+    if (blocked() || !game) return null;
     return settle(value === undefined ? game.tap(i, game.mode) : game.put(i, value));
   },
   stroke(cells, value) {
-    if (!game) return null;
+    if (blocked() || !game) return null;
     return settle(game.stroke(cells, value === undefined ? game.digit : value));
   },
   select(i) {
-    if (!game) return -1;
+    if (blocked() || !game) return -1;
     const r = game.select(i);
     draw();
     return r;
   },
   solveWithLogic({ cap = 6000 } = {}) {
-    if (!game) return null;
+    if (blocked() || !game) return null;
     const r = game.solveWithLogic({ cap });
     syncAll();
     if (game.status === 'won') onWin();
     return r;
   },
   elapsed: clock,
+  voices: () => Sound.voices(),
   state: () => (game ? { ...game.state(), elapsedMs: clock(), dead: game.dead, persistent: Store.persistent } : null),
   cellAt: (x, y) => (game ? game.cellAt(x, y) : -1),
   valueOf: (i) => (game ? game.valueOf(i) : EMPTY),

@@ -11,22 +11,45 @@
 
 * { box-sizing: border-box; }
 
+/* The touch floor as a CSS-side literal. js/main.js overwrites this custom property with
+   js/theme.js's own Cell.minTouch, so the two sides state the rule once — but the value has to be
+   real before any module runs, otherwise a slow parse leaves every press target at the UA default
+   and the 44 px rule is a comment rather than a layout. */
+:root { --touch-min: 44px; }
+
 html, body {
   margin: 0;
   min-height: 100%;
-  background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 62%, var(--surface) 100%);
-  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
+body {
+  /* The night-sky backdrop is the same motif the app icon carries, generated in-repo by
+     assets/gen/motif.py. It sits under the gradient, which still carries the colour tokens, so a
+     missing texture degrades to the old flat page instead of to a white one. */
+  background-image:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-top) 82%, transparent) 0%, color-mix(in srgb, var(--bg-bottom) 74%, transparent) 62%, color-mix(in srgb, var(--surface) 88%, transparent) 100%),
+    url('../assets/texture/night-sky-512.png');
+  background-repeat: no-repeat, repeat;
+  background-size: cover, 512px 512px;
+  background-attachment: fixed, fixed;
+  background-color: var(--bg-top);
+}
+
 body { touch-action: manipulation; }
 
+/* Safe-area insets, and viewport-fit=cover in the meta is what makes them non-zero on iOS.
+   Without `cover` the browser letterboxes the page and env() reports 0 everywhere, so the notch
+   and the home bar silently eat the top bar and the footer instead of being routed around. */
 #app {
   max-width: 1180px;
   margin: 0 auto;
-  padding: var(--space-page) var(--space-page) var(--space-inner);
+  padding: calc(var(--space-page) + env(safe-area-inset-top))
+           calc(var(--space-page) + env(safe-area-inset-right))
+           calc(var(--space-inner) + env(safe-area-inset-bottom))
+           calc(var(--space-page) + env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
   gap: var(--space-card);
@@ -58,7 +81,11 @@ body { touch-action: manipulation; }
   text-transform: uppercase;
 }
 
-.top-actions { display: flex; gap: var(--space-gutter); }
+.top-actions {
+  display: flex;
+  gap: var(--space-gutter);
+  padding-right: env(safe-area-inset-right);
+}
 
 /* Every pressable thing clears the touch floor js/theme.js states (44 CSS px). In this game the
    thing under the finger is a cell of the board, so a keyboard row that a thumb cannot hit is
@@ -282,6 +309,25 @@ main { flex: 1; }
 
 .stage-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
+/* The run controls are pushed to the right edge of the stage head so they never crowd the clock
+   they change, and their hit box is stated as a literal 44 px rather than a var() — these are the
+   three targets a thumb aims at while the other hand holds the phone. */
+.hud { display: flex; gap: 8px; margin-left: auto; }
+
+.hud-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.hud-btn.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.hud-btn .hud-glyph { font-family: var(--font-mono); }
+
 .puzzle-name { font-weight: 700; letter-spacing: 0.08em; }
 
 .chip {
@@ -339,6 +385,41 @@ main { flex: 1; }
   border-radius: var(--radius-card);
   background: var(--surface-lift);
   max-width: 86%;
+}
+
+/* The pause veil is opaque where the win veil is translucent: a paused board must not be readable
+   at all, or the player solves it in their head through the overlay and the freeze is decorative. */
+#pause-veil {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg-top) 96%, transparent);
+  border-radius: var(--radius-card);
+  animation: rise var(--dur-tap) var(--ease-ease) both;
+}
+
+.pause-card {
+  text-align: center;
+  padding: var(--space-card);
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  max-width: 86%;
+}
+
+.pause-card h3 { margin: 0 0 6px; font-size: 18px; }
+.pause-card p { margin: 0 0 8px; font-size: 13px; color: var(--ink-dim); }
+.pause-note { font-size: 11.5px !important; color: var(--ink-faint) !important; }
+.pause-actions { display: flex; gap: var(--space-gutter); justify-content: center; }
+
+/* The win card carries the same skyline the app icon is built from — the reward for finishing a
+   board is the picture of a finished row of towers. */
+.win-card {
+  background-image: url('../assets/sprite/skyline-960x240.png');
+  background-repeat: no-repeat;
+  background-position: center bottom;
+  background-size: 100% auto;
 }
 
 .win-card h3 { margin: 0 0 6px; font-size: 19px; }
@@ -426,6 +507,7 @@ main { flex: 1; }
 .foot {
   display: flex;
   justify-content: space-between;
+  column-gap: calc(var(--space-card) + env(safe-area-inset-left) + env(safe-area-inset-right));
   gap: var(--space-card);
   align-items: center;
   color: var(--ink-faint);
@@ -437,6 +519,26 @@ main { flex: 1; }
 
 .foot code { font-family: var(--font-mono); color: var(--ink-dim); }
 
+/* The system preference is honoured without waiting for a module to run: the canvas reads
+   js/theme.js's prefersReducedMotion(), but this page also animates in CSS, and a player who asked
+   their OS for less motion should not get the rise/veil animations in the 200 ms before the
+   bundle boots. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .view,
+  #win-veil,
+  #pause-veil { animation: none; }
+  button:active { transform: none; }
+}
+
 @media (max-width: 900px) {
   #view-game { grid-template-columns: 1fr; }
   .menu-cols { grid-template-columns: 1fr; }
@@ -447,6 +549,11 @@ main { flex: 1; }
      board needs 343 CSS px of stage before its cells can stay 44 px wide (layoutFor() in
      js/render/board.js), and at the desktop paddings a 390 px viewport only ever had 316. The
      touch floor is the one thing here that is a rule rather than a preference. */
-  #app { padding: var(--space-gutter) var(--space-gutter) var(--space-inner); }
+  #app {
+    padding: calc(var(--space-gutter) + env(safe-area-inset-top))
+             calc(var(--space-gutter) + env(safe-area-inset-right))
+             calc(var(--space-inner) + env(safe-area-inset-bottom))
+             calc(var(--space-gutter) + env(safe-area-inset-left));
+  }
   .stage, .panel { padding: var(--space-gutter); }
 }

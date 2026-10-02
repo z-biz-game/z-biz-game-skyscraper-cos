@@ -86,7 +86,7 @@ export class BoardView {
     return gy * n + gx;
   }
 
-  draw(game, { pulse = null, preview = null, cursor = null } = {}) {
+  draw(game, { pulse = null, preview = null, cursor = null, pulseFx = null } = {}) {
     this.game = game;
     const { ctx, geo } = this;
     const { cell, band, x, y, n } = geo;
@@ -163,10 +163,15 @@ export class BoardView {
       ctx.font = `700 ${Math.round(band * 0.62)}px ${Font.mono}`;
       ctx.fillText(String(want), rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
       if (pulse && pulse.clueIdx === i) {
+        const fx = pulseFx || { scale: 1, phase: 0 };
+        ctx.save();
+        ctx.globalAlpha = ringAlpha(fx);
         ctx.strokeStyle = Palette.hint;
-        ctx.lineWidth = 2;
-        roundRect(ctx, rect.x + 2, rect.y + 2, rect.w - 4, rect.h - 4, Radius.chip);
+        ctx.lineWidth = 2 + ringBreath(fx, band);
+        const inset = 2 - ringBreath(fx, band);
+        roundRect(ctx, rect.x + inset, rect.y + inset, rect.w - 2 * inset, rect.h - 2 * inset, Radius.chip);
         ctx.stroke();
+        ctx.restore();
       }
     }
 
@@ -194,10 +199,15 @@ export class BoardView {
     // What a hint just named — the only place the UI is allowed to say "look here".
     if (pulse && pulse.cell != null) {
       const r = this.cellRect(pulse.cell);
+      const fx = pulseFx || { scale: 1, phase: 0 };
+      const breath = ringBreath(fx, cell);
+      ctx.save();
+      ctx.globalAlpha = ringAlpha(fx);
       ctx.strokeStyle = pulse.color || Palette.hint;
       ctx.lineWidth = Math.max(2, cell * 0.09);
-      roundRect(ctx, r.x + 2, r.y + 2, cell - 4, cell - 4, Radius.cell);
+      roundRect(ctx, r.x + 2 - breath, r.y + 2 - breath, cell - 4 + 2 * breath, cell - 4 + 2 * breath, Radius.cell);
       ctx.stroke();
+      ctx.restore();
     }
   }
 
@@ -232,6 +242,23 @@ function touchedClues(b, i) {
   const r = ((i / n) | 0);
   const c = i % n;
   return [3 * n + r, n + r, c, 2 * n + c];
+}
+
+// The ring's shape comes from the loop's own virtual clock, so both of these are pure functions of
+// numbers that are identical at 30, 60 and 120 Hz: `scale` is the damped amplitude and `phase` is
+// 0..1 through one breath.
+function ringBreath(fx, cell) {
+  const phase = fx.phase || 0;
+  const scale = fx.scale == null ? 1 : fx.scale;
+  return Math.max(0, cell * 0.05 * Math.sin(phase * Math.PI * 2)) * scale;
+}
+
+function ringAlpha(fx) {
+  const scale = fx.scale == null ? 1 : fx.scale;
+  const age = fx.age || 0;
+  // Fade with the damped amplitude, then a last stretch on age so the ring never pops out of
+  // existence at the end of its window.
+  return Math.max(0.2, Math.min(1, 0.45 + 0.55 * scale) * (1 - age * age * 0.55));
 }
 
 function line(ctx, x1, y1, x2, y2) {
