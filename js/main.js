@@ -688,6 +688,19 @@ function begin({ tier = null, seed = null, level = null, daily = false, resume =
   return openTier(tier || (game ? game.puzzle.tier : TIERS[0].key), seed);
 }
 
+// manifest.webmanifest 的两条 shortcuts 承诺了 ./?daily=1 与 ./?resume=1。清单既然把话说了出去，
+// 落地页就得真的走到那一张盘 —— 否则快捷方式只是盘上的装饰，正是这一轮要防的"说了没做"。
+// 走的是按钮同一个 begin()，所以从主屏图标进来和从菜单点进去不是两条代码路径。
+function applyDeepLink() {
+  const q = new URLSearchParams(location.search || '');
+  if (q.get('daily') === '1') return begin({ daily: true }) ? 'daily' : '';
+  if (q.get('resume') === '1') {
+    const r = Store.resume();
+    return r && r.seed && begin({ resume: r }) ? 'resume' : '';
+  }
+  return '';
+}
+
 // A daily save belongs to its date: if the calendar rolled over while the tab was closed, the ink on
 // it is yesterday's answer to today's board, so the card offers nothing rather than a false resume.
 function rebuildDaily(resume) {
@@ -1141,6 +1154,7 @@ applyThemeVars();
 applySettings();
 renderMenu();
 syncPauseButton();
+const deepLink = applyDeepLink();
 startLoop();
 
 const surface = {
@@ -1151,6 +1165,8 @@ const surface = {
   },
   shown: () => shown,
   phase: phaseName,
+  // Which manifest shortcut (if any) actually landed on a board: '' means the query was decoration.
+  deepLink: () => deepLink,
   // The loop's own numbers. A harness feeds update() a virtual clock and reads these back; that is
   // the only way "frame-rate independent" can be settled with digits instead of adjectives.
   sim,
