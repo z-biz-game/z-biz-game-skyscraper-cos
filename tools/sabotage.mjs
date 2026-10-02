@@ -37,9 +37,9 @@ const sh = (cmd, timeout) => {
 const git = (a) => sh(`git ${a}`, 30000).out.trim();
 
 // 刀谱：每把杀一组（D1 阶梯 / D5 出厂三票 / D6 引擎条数 / D8 夹具 / D9 接线与端口 / D11 反向 import）。
-// expect 必须是 doctest 里那条断言**标签的原文**（反引号里那一串），预检只认标签，不认注释里的转述：
-// K3 第一版写的是转述「文档抄的引擎断言条数与节数逐处等于」，它在文件里确实存在（章节注释），于是预检放过了
-// 这一把，可 FAIL 行里印的是标签原文，点名永远对不上——刀明明把闸打红了，台账却判它"没证明过"。
+// expect 必须是 doctest 里那条断言**标签的原文**（FAIL 行印的就是它），不能是转述：K3 第一版写的是
+// 转述「文档抄的引擎断言条数与节数逐处等于」，它在文件里确实存在（章节注释），于是预检放过了这一把，
+// 可 FAIL 行里印的是标签原文，点名永远对不上——刀明明把闸打红了（D6f），台账却判它"没证明过"。
 const KNIVES = [
   {
     id: 'K1', file: 'js/engine/generate.js', group: 'D1',
@@ -108,15 +108,11 @@ for (const k of picked) {
   const hits = [...src.matchAll(new RegExp(k.needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))].length;
   if (hits !== 1) die(`${k.id} 的针在 ${k.file} 命中 ${hits} 次（必须恰好 1 次：打不中或打多了都不许跑）`);
   if (k.repl === k.needle) die(`${k.id} 的「改成」与针相同，这一刀不会改变任何东西`);
-  // 点名对象必须是**标签原文**：把每条断言的第一个实参（反引号里以 `D<组号>` 开头那串）取出来当台账，
-  // 转述、注释、别的文件的字符串都不算。
-  const labels = gateSrc.match(/`D\d+[a-z]?[^`]*`/g) || [];
-  const mine = labels.filter((L) => new RegExp('^`' + k.group + '[a-z]?\\b').test(L) && L.includes(k.expect));
-  if (!mine.length) {
-    die(`${k.id} 期望点名的「${k.expect}」不是 ${k.group} 那一组任何一条断言标签里的原文——`
-      + `预检只认反引号里的标签（共解析到 ${labels.length} 条），转述不算：它可以在文件里存在却永远对不上 FAIL 行`);
-  }
-  console.log(`  预检 ${k.id} · ${k.file} 针唯一命中 · 该杀 ${mine[0].slice(1, 46).trim()}…`);
+  // 这条只是早一步的提示：连源文件里都找不到这几个字，说明那条断言被改名或删除，不必等六把刀跑完。
+  // 它**不是**点名的证明——K3 第一版的 expect是一句转述，它在源文件里存在（躺在章节注释里），这里照样过，
+  // 运行时那一关才把它抓住。真正的证明在下面：这一刀跑完，FAIL 行必须同时带上该组的编号和这条标签的原文。
+  if (!gateSrc.includes(k.expect)) die(`${k.id} 期望点名的「${k.expect}」整份 tools/doctest.mjs 里都没有（那条断言被改名或删掉了）`);
+  console.log(`  预检 ${k.id} · ${k.file} 针唯一命中 · 该杀 ${k.group}「${k.expect}」`);
 }
 
 const results = [];
