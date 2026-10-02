@@ -1,0 +1,28 @@
+{
+  "name": "摩天楼 Skyscraper · 楼高可见数推理",
+  "short_name": "摩天楼",
+  "description": "四条边上的数字写着从那个方向望进去看得见几栋楼。每局唯一解、每局都能用铅笔规则推到底。",
+  "id": "./",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "base_url": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "any",
+  "background_color": "#080B16",
+  "theme_color": "#080B16",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "categories": ["games", "puzzle", "logic"],
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-1024.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "今日日课", "short_name": "日课", "url": "./?daily=1", "description": "按日期轮换的一题", "icons": [{ "src": "assets/icons/icon-96.png", "sizes": "96x96", "type": "image/png" }] },
+    { "name": "继续未完的一局", "short_name": "继续", "url": "./?resume=1", "description": "回到存档里最后一局", "icons": [{ "src": "assets/icons/icon-96.png", "sizes": "96x96", "type": "image/png" }] }
+  ]
+}
