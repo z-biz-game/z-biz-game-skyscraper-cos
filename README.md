@@ -105,7 +105,7 @@
   它的作用是让阶梯"断掉"时构建变红，不是给菜单印一个分数。
 - 两个方向都会偏：`master` 档现场中位数（230.3）**高于**出厂中位数（228.5），`novice` 档现场（55.6）**低于**
   出厂（61.9）。所以谁拿出厂分数去预测现场抽题、或者反过来，都会错。
-- CI 里那一跑是 `SAMPLES: "12"`（`.github/workflows/ci.yml:43`），本页是 `SAMPLES=24`（`tools/balance.mjs:27`
+- CI 里那一跑是 `SAMPLES: "12"`（`.github/workflows/ci.yml:43`），本页是 `SAMPLES=24`（`tools/balance.mjs:6`
   的注释把 24 这一跑指定为"README/DESIGN 引用的那张表"）。样本数不同，分位数就不同，同理不可互换。
 
 想复现这两列，用本页最后一节的 A/B 两条探针命令；不要把 `balance` 的表读成"菜单里那 20 关的分数"。
@@ -155,7 +155,7 @@
 
 ## 未验证（不要当成已通过）
 
-- **Safari / Firefox / 移动端实机**：五道门禁只在**本机 headless Chrome**（`--headless=new`，1280×1024，dpr 1）
+- **Safari / Firefox / 移动端实机**：七道门禁只在**本机 headless Chrome**（`--headless=new`，1280×1024，dpr 1）
   跑过；`tools/verify.sh` 只找 Chrome 系可执行文件。跨浏览器与真实触屏**未验证**。
 - **已部署的 Pages 产物：这一条本轮从"未验证"变成了实测**（HEAD `5c59352`、2026-09-28 02:05 CST）：
   `BASE_URL=https://z-biz-game.github.io/z-biz-game-skyscraper-cos/ bash tools/verify.sh` → 8 场景
@@ -195,7 +195,9 @@ npm run check                        # → OK
 node tools/engine-test.mjs           # → 断言 1976 · 通过 1976 · 失败 0 · 章节 9 节（含规则开火普查）
 node tools/bake.mjs --check          # → 20 关，每个印出的数字都从线索串重算
 SAMPLES=24 node tools/balance.mjs    # → == 结论 ：门禁全过 ==（含穷举举证台账）
-bash tools/verify.sh                 # → === ALL GREEN（两种 URL 形态的全部场景）===
+node tools/doctest.mjs               # → rows: 276 fail: 0（文档数字闸，D1–D14）
+node tools/sabotage.mjs              # → ledger: PASS（破坏台账：每把刀都必须把上面那道闸弄红并点名）
+bash tools/verify.sh                 # → === ALL GREEN（两种 URL 形态的全部场景）===，里面含上面两道闸
 ```
 
 本机实测耗时（`/usr/bin/time -p`，HEAD `11881a5`，2026-09-28 02:30–02:36 CST）：`check` 1.7 s、
@@ -204,9 +206,27 @@ bash tools/verify.sh                 # → === ALL GREEN（两种 URL 形态的�
 
 `tools/balance.mjs` 里那句 `SAMPLES=24 npm run balance  # the table quoted in README/DESIGN` 是本页这张表的口径来源。
 
+## 文档也有一道闸（`node tools/doctest.mjs`）
+
+本页与 `DESIGN.md` 印出去的每一个现值都由 `tools/doctest.mjs` 当场重算再对：出厂 20 关从 `clue` 串重解、
+再交给两个独立穷举器判一遍（**不读 `js/data/levels.js` 里记着的答案**——生成器自己记的数在剪线索之后就不作数了）；
+每档 24 题按 `balance-<档>-<k>` 那批种子重造；规则开火普查、`>>>FIXTURE` 夹具表、端口与 `SAMPLES` 口径、
+`file:NN` 引用与锚点表、阶梯表与中位链都在里面。它分 D1–D14 十四组、全跑 276 条断言（脚本尾部打
+`rows: 276 fail: 0`，文件里 `EXPECT_ROWS` 钉的是 276），tools/verify.sh 里钉的 doctest 断言数是 276 ——
+整段检查被删掉时条数对不上就红，不会留下一声"绿"。
+
+墙钟那一类（`engine-test` 9.4 s、`balance` 29.9 s、`verify` 34.8 s、`45 / 256 ms`）**这道闸一条都不重测**，
+也不新写读数：它只在文档把计时当成现值来断言时红。
+
+台账 `node tools/sabotage.mjs` 是这道闸的反证：全绿只说明这一轮没东西坏，没说它会不会红。每一把刀把一类谎
+写回树里（改 `TIERS` 的带、改出厂关卡的线索串、改 README 那句引擎断言条数、改 `verify.sh` 的 want 端口、
+往 `js/` 里塞一条反向 import、改 `scenarios.js` 的夹具字段），要求 doctest `rc ≠ 0` **且**点名它杀的那条断言，
+FAIL 行原文进日志；恢复用的是下刀之前读进内存的那份字节（本工作区禁用 `git checkout` / `restore` / `reset`，
+它也不需要），跑之前工作树必须干净。实测退码由脚本自己读回来盖进台账表。
+
 ## 文档纪律
 
 - 文档是**承诺**，不是事实：`js/`、`tools/` 的代码 > 本文档。
 - 本文里的每个数字要么来自本页最后一节能跑出来的命令，要么明写"未验证"。
 - 本文引用代码用的是 `file:line`，每条都在最后一次编辑后按标识符复验过；行号漂了请以那一行的标识符为准。
-- 设计侧的分解、成本表与四道闸的动机在 `DESIGN.md`（`DESIGN.md` §2/§3/§4/§5/§8 是代码注释里点名的几节）。
+- 设计侧的分解、成本表与七道闸（六道 Node + 一道浏览器）的动机在 `DESIGN.md`（`DESIGN.md` §2/§3/§4/§5/§8 是代码注释里点名的几节）。

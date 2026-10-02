@@ -14,7 +14,7 @@
 `js/data/levels.js` 逐字节相同（sha256 `de7d828afd7299d1a8c77852b08ae6073cb1f7b978dc492a526aacfd0b47de0a`，
 在 `1a2f479`、`11881a5` 与工作树三处都相同），引擎单测 1879 → 1976 条，浏览器闸仍是每形 507 条、0 失败。
 
-代码注释里点名要这一份文件的四处是 `js/engine/skyscraper.js:25`（→ §2）、
+代码注释里点名要这一份文件的七处是 `js/engine/skyscraper.js:25`（→ §2）、
 `js/engine/skyscraper.js:347`（→ §4）、`js/engine/generate.js:23`（→ §5）、`js/engine/perm.js:9`（→ §5）、
 `js/engine/perm.js:14`（→ §3）、`js/engine/generate.js:357`（→ §8）、`tools/bake.mjs:18`（→ §8）。
 
@@ -45,9 +45,12 @@
 | `tools/balance.mjs` | 现场抽题量阶梯，两道人审 | 读任何写死的表（`tools/balance.mjs:1-3`） |
 | `tools/bake.mjs` | 写 `levels.js`，并用 `--check` 把每个印出的数字重算回去 | 墙钟时间 |
 | `tools/verify.sh` `tools/playtest.cjs` `tools/scenarios.js` | 真 Chrome + CDP：DOM 几何、画布像素、真 localStorage，两种 URL 形态各一遍 | 内部标志位（断言只读 DOM/像素/存档） |
+| `tools/doctest.mjs` | 文档数字闸：README/DESIGN 印出的每一个现值都从引擎当场重算再对，分 D1–D14 十四组，全跑 276 条断言 | 抄文档里的数（它只认自己重算出来的那一版） |
+| `tools/sabotage.mjs` | 破坏台账：把每一类谎各写回树里一遍，要求 `tools/doctest.mjs` **点名**变红，再从内存里那份字节恢复 | 用 git 恢复（本工作区禁用那几条命令，见 §7 最后一行） |
 
-一个刻意的事实：`countSolutions` / `countNaive` **只在 `tools/` 和页内测试场景里被调用**，出货的浏览器运行时
-（`js/main.js` 那条路径）从不跑穷举计数。唯一性是**出厂前**证明的，不是玩家等到的。
+一个刻意的事实：`countNaive` **只在 `tools/` 和页内测试场景里被调用**；`countSolutions` 在 `js/` 里只有一个调用点，
+就是出题那一张（`js/engine/generate.js:253`，`11881a5` 起）。出货的浏览器运行时（`js/main.js` 那条路径）
+从不跑穷举计数。唯一性是**出厂前**证明的，不是玩家等到的。
 
 ## §2 表示层：两个哨兵为什么不是同一个数
 
@@ -111,7 +114,7 @@
 分数是**这条脚本的成本**：`score = Σ (place ? weight : weight × 被划掉的候选数)`，深度是用到过的最大 `level`
 （`js/engine/skyscraper.js:596-608`）。
 
-实测（本轮，§11 探针 D 的原始输出；其中"开过火 10 种"和"沉默的那三条的名字"同时被引擎单测第九节 `规则开火普查` 钉成了断言，`tools/engine-test.mjs:1505`、`:1557`、`:1558`）：
+实测（本轮，§11 探针 D 的原始输出；其中"开过火 10 种"和"沉默的那三条的名字"同时被引擎单测第九节 `规则开火普查` 钉成了断言，`tools/engine-test.mjs:1505`、那一节的 `sec()` 在 `:1544`、两条计数断言在 `:1557`、`:1558`）：
 
 - 出厂 20 关共 **1512 步**，只开火 **10 种**规则：
   `排列集排除候选 738 / 整行相容排列集 374 / 第一格的顶 190 / 最高楼的位置 79 / 只见一栋 45 / 同行不重复 33 /
@@ -128,7 +131,7 @@
   stall without them"，本轮这个因果不复现。Hall 在数学上确实严格强于逐格支持检查，但在**这条阶梯产生的盘上它没有活可干**。
   这一轮只写文档，代码没动。
 - 同一条不一致会漏到玩家脸上：出厂章节标题 `六阶的 Hall 家族` 与大师档的文案
-  "几格候选挤在同样几格里，Hall 家族才解得开"（`tools/bake.mjs:90`、`js/main.js:524`）承诺 Hall 是大师档的钥匙，
+  "几格候选挤在同样几格里，Hall 家族才解得开"（`tools/bake.mjs:95`、`js/main.js:524`）承诺 Hall 是大师档的钥匙，
   而**同一个菜单**的规则表会打印"这条规则在这 20 关里开火 0 次（沉默）"（`js/main.js:587`、`:592-593`）。
   本轮实测：4 张出厂 master 关的深度都是 3。
 
@@ -197,7 +200,7 @@
 "种子族 `campaign|<tier>|<j>` 里第一批落进 `band` 且线索串不重复的盘"（`tools/bake.mjs:101-109`），
 所以出厂池是**截断样本**。它和 `balance` 的现场分位表是两个总体，中位数不可互换（README 有专门一节讲这件事）。
 
-## §7 闸：四道 Node 闸 + 一道浏览器闸，两种 URL 形态
+## §7 闸：六道 Node 闸 + 一道浏览器闸，两种 URL 形态
 
 | 闸 | 命令 | 它到底在拦什么 |
 | --- | --- | --- |
@@ -205,7 +208,9 @@
 | 引擎保证 | `node tools/engine-test.mjs` | 1976 条断言 / 9 节（`11881a5` 前 1879）；期望值是**纸上演算写死的字面量**，绝不从求解器读回来（`tools/engine-test.mjs:1-15`） |
 | 阶梯 | `node tools/balance.mjs` | 入带率 + 中位数严格递增 + 线索轴生效 + Stirling 行 + 每样本三套实现对拍，**外加逐题的穷举举证账**：`handed ≥ 1 && proved ≥ 1`、`交给它 = 证完 + 四类拒绝`、`maxNodes < proof.budget` 压线即红（`tools/balance.mjs:133-137`）。CI 口径是 `SAMPLES: "12"`（`.github/workflows/ci.yml:43`），文档口径是 24 |
 | 出厂重算 | `node tools/bake.mjs --check` | §6 的语义 + 逐字节两件事 |
-| 浏览器 | `bash tools/verify.sh` | 真 Chrome：DOM 几何、画布像素、真 localStorage。**两种形态各 8 场景 = 507 条**（`tools/verify.sh:33` 的注册表）。前四个 Node 闸从建仓起就在 CI 里跑，这一条不是——`browser` 作业是 `5c59352` 才加的，同一 SHA 的 runner 日志里两个步骤各自 `success` |
+| 文档数字 | `node tools/doctest.mjs` | README/DESIGN 印出去的每一个现值：阶梯表、入带率与中位链、拒绝统计、穷举台账、墙探针、出厂 20 关的三票、规则开火普查、`>>>FIXTURE` 夹具表、端口与 `SAMPLES` 口径、`file:NN` 引用（142 条范围 + 57 条锚点）、`DESIGN.md §N` 的"几处"那句自己、D1–D14 十四组与 `EXPECT_ROWS` 自钉。它**不重测墙钟**，也不抄文档的数：全部当场重算 |
+| 破坏台账 | `node tools/sabotage.mjs` | 全绿不等于闸会红。六把刀逐把把一类谎写回树里（`TIERS` 带、出厂关卡的线索串、README 那句"1976 条"、`verify.sh` 的 want 端口、`js/` 反向 import `tools/` 那一类缺席检查、`scenarios.js` 夹具字段），每把都要求 doctest `rc≠0` **且**点名它杀的那条断言，FAIL 行原文留在日志里；恢复用的是下刀前读进内存的那份字节（不是 `git checkout`/`restore`——本工作区禁用），盖回台账的 rc 是真读回来的 |
+| 浏览器 | `bash tools/verify.sh` | 真 Chrome：DOM 几何、画布像素、真 localStorage。**两种形态各 8 场景 = 507 条**（`tools/verify.sh:33` 的注册表）。前四道 Node 闸从建仓起就在 CI 里跑，这一条不是——`browser` 作业是 `5c59352` 才加的，同一 SHA 的 runner 日志里两个步骤各自 `success`。表中后两道（文档数字、破坏台账）与 `bash tools/verify.sh` 里的那两条逻辑闸是同一条命令，CI 没有只属于自己的门 |
 
 `verify.sh` 为什么要把同一组场景跑两遍（根 `5313`、前缀 `5323/<repo>/`）：根形态是本地服务器能**意外**满足的形态，
 而 Pages 是 `/<repo>/` 前缀 —— 一个写死的 `/js/...` 在前缀下 404，而一次抛断的动态 import 会把注入脚本的**后半截**
@@ -313,7 +318,7 @@ play 49 + conflict 37 + hint 198 + stats 45 = 507 条`，0 失败。
    `makePuzzle` 里面（`generate.js:253`），`balance.mjs:109-111` 的计时因此确实包住了它，
    "re-check included"那句不再说谎；但同一台机器本轮读到的是 **45 / 256 ms**，注释写的 38 / 194 是另一轮负载下的读数。
    **绝对毫秒数不该钉在注释里**这件事仍然成立，注释本轮未再改（改它是文案工作，不是正确性问题）。
-4. 出厂章节文案 `六阶的 Hall 家族` / "Hall 家族才解得开"（`tools/bake.mjs:90`、`js/main.js:524`）
+4. 出厂章节文案 `六阶的 Hall 家族` / "Hall 家族才解得开"（`tools/bake.mjs:95`、`js/main.js:524`）
    与同一菜单打印的"这条规则开火 0 次（沉默）"（`js/main.js:587`）互相打脸；4 张 master 关实测深度 3。
 5. `tools/engine-test.mjs:17-25` 的章节清单列了 8 节，实际 `sec()` 调用是 9 个（缺
    `每一步都当场可验`，`tools/engine-test.mjs:658`），输出里也是 `章节 9 节`。

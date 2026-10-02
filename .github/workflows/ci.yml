@@ -49,7 +49,21 @@ jobs:
       - name: Entry files exist
         run: test -f index.html && grep -q '<canvas' index.html && grep -q 'js/main.js' index.html
 
-  # The four steps above are Node-side. `tools/verify.sh` is the fifth gate and, until this job
+      # Prose is a gate too: every number printed in README/DESIGN is re-derived from the engine on
+      # the spot (20 shipped boards re-solved + re-counted, 24 live puzzles per tier, the fired-rule
+      # census, the fixture table). The step is red if a doc number drifts OR if the gate itself
+      # quietly loses assertions (DOCTEST_ROWS_WANT is pinned in tools/verify.sh).
+      - name: Doc numbers match the engine (doctest)
+        run: node tools/doctest.mjs
+
+      # Green does not prove the gate can go red. The sabotage ledger writes each class of lie back
+      # into the tree, one knife at a time, and requires tools/doctest.mjs to fail *naming* the
+      # assertion it killed; then it restores from the bytes it read into memory before cutting.
+      # Same command as `npm run sabotage` and the same one tools/verify.sh runs — no CI-only gate.
+      - name: Sabotage ledger proves the doc gate bites
+        run: node tools/sabotage.mjs
+
+  # The six steps above are Node-side. `tools/verify.sh` is the seventh gate and, until this job
   # existed, CI had never run it: 507 browser assertions per URL shape (first seed rules unique
   # play conflict hint stats) measured 2026-09-28 on the author's machine, twice, and never once on
   # a runner. A gate that is only ever run by hand is documentation, not a gate.
