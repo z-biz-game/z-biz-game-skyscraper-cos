@@ -417,6 +417,45 @@ function openPuzzle(puzzle, resume = null) {
   return game;
 }
 
+// 重开：**同一道题**从头再来 —— 落笔、便签、撤销栈、步数、提示次数、提示游标、计时、
+// 结算遮罩全部归零，但不换题。跟「换一局 / 换关卡」的分工：那些是去开一道新题
+//（本仓的 begin() 走 openTier/openLevel/openDaily，那几条路都会重抽题面），
+// 这里是"这题我走错了，原地重来"——玩家要的是同一个题。
+//
+// **特意不走 begin()/openPuzzle()**：那两条路的第一件事就是 new Game(puzzle)，
+// 等于把题也换了，那就不是重开而是换题。复位只允许动这一局的痕迹。
+// 为什么不能只调一次 resetInk() 就完事：那一步只碰得到引擎的盘面与 history，
+// UI 层的撤销栈、步数、提示次数、提示游标、键盘选中的格与数字都是各自独立存着的缓存
+// （详见 Game.resetAll 的注释）。
+function restart() {
+  if (!game) return null;
+  game.resetAll();            // 盘面 + steps + moves + hints + cursor + status + mode + digit + selected
+  clearPulse();               // 上一条提示留下的高亮，属于上一局
+  stroke = null;              // 上一次没画完的拖拽手势
+  el.winVeil.hidden = true;   // 结算遮罩收起：上一局赢了的遮罩不能压在重开后的盘上
+  baseElapsed = 0;            // 耗时归零
+  // 暂停中重开就保持停表，否则 startClock() 会把暂停期间憋下的墙钟一次性灌进计时。
+  if (paused) {
+    startedAt = 0;
+    clearInterval(ticker);
+    ticker = 0;
+  } else {
+    startClock();             // 没暂停就重新起跑，重开后的计时是这一局自己的
+  }
+  buildKeypad();              // 键盘面板跟着新的数字范围重建（1..n 随题面走）
+  setMode(INK);               // 临时态：落笔模式回默认，HUD 的 aria-pressed 一起回写
+  game.select(0);             // 键盘选中的格回第一格
+  show('game');
+  el.hintRule.textContent = '提示理由';
+  el.hintLine.innerHTML = '按 <b>提示</b>：说下一条线索逼得出的事实，以及它依据哪条边的哪个数。';
+  syncAll();
+  // 存档覆盖成本局的空盘：刷新页面不会又冒出走错那半局的线。
+  // 特意**不**碰 Store 的偏好（静音 / 减动效 / 最好成绩）——那是玩家的东西，不是这一局的东西。
+  flushResume();
+  renderResumeCard();
+  return game;
+}
+
 function openTier(tierKey, seed = null) {
   const key = TIERS.some((t) => t.key === tierKey) ? tierKey : TIERS[0].key;
   return openPuzzle(seed ? puzzleFromTier(key, seed) : openingFor(key));
@@ -743,6 +782,7 @@ $('#btn-erase').addEventListener('click', eraseCell);
 $('#btn-wipe').addEventListener('click', wipeNotes);
 $('#btn-hint').addEventListener('click', useHint);
 $('#btn-undo').addEventListener('click', undo);
+$('#btn-restart').addEventListener('click', restart);
 $('#btn-new').addEventListener('click', () => openTier(game ? game.puzzle.tier : TIERS[0].key));
 $('#btn-menu').addEventListener('click', () => {
   flushResume();
@@ -804,6 +844,9 @@ window.addEventListener('keydown', (ev) => {
   else if (lower === 'n') setMode(game.mode === INK ? NOTE : INK);
   else if (lower === 'x') eraseCell();
   else if (lower === 'w') wipeNotes();
+  // R 重开同一题，**局中就能按**（不只结算后）：玩家填到一半发现这条边数错了，当场 R 一下。
+  // 本仓原先没有任何键占着 R（h/z 是玩法，n 切笔注，x 擦，w 清便签，数字键选数），不需要换键。
+  else if (lower === 'r') restart();
   else if (k === 'Enter' || k === ' ') pressDigit(game.digit);
   else if (/^[1-9]$/.test(k)) {
     const v = Number(k);
@@ -842,6 +885,9 @@ renderMenu();
 const surface = {
   version: VERSION,
   view,
+  // 重开同一题：挂在窗口上是为了让探针能真的驱动一次、读 BEFORE/AFTER，
+  // 而不必去合成点击（键盘面板的点击在离屏环境里不稳）。
+  restart,
   get game() {
     return game;
   },
