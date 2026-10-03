@@ -165,7 +165,7 @@
   仍未验证的：那一次是**本机 headless Chrome 打线上产物**，不是 Safari / Firefox / 实机；
   也没逐文件比对过 Pages 构建产物与仓内字节（`pages.yml` 的 `Assemble static site` 那一步决定线上有什么，
   本文对它只有一个断言：上面那次跑的是真站返回的 HTML 与模块）。
-- **读屏与键盘无障碍**：`aria-live` 状态行、`aria-pressed` 键盘、方向键选格都在（`index.html:106`、`index.html:111-115`），
+- **读屏与键盘无障碍**：`aria-live` 状态行、`aria-pressed` 键盘、方向键选格都在（`index.html:112`、`index.html:116-118`），
   也断言了 `--touch-min` 是 44px，但**没有用任何读屏器实测过**，也没有键盘-only 的完整通关实测。
 - **低端机时延 / 真实小屏几何**：本轮几何断言全部在 1280×1024 桌面窗口量到（`cell: 64`）。
   `layoutFor()` 的下限是 `Cell.min = 26` 而不是 44（`js/render/board.js:15`、`js/theme.js:58`），
