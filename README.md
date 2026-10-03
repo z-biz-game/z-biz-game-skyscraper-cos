@@ -127,7 +127,7 @@
    不存在"可能是唯一"的解释空间。预算按**节点**计价（`PROOF_BUDGET = 40,000,000`，`js/engine/generate.js:65`），
    所以这条复核在 node、浏览器与 `bake` 里逐次同价，墙钟进不了判定（见 DESIGN §8）。
 3. **提示只给下一步可证事实。** 提示脚本是**线索**推出来的那条路径，不是玩家墨迹推出来的
-   （`this.script = solve(puzzle.board).rows`，`js/ui/game.js:49`）；写下的每个数都点名它依据哪条边的哪个数。
+   （`this.script = solve(puzzle.board).rows`，`js/ui/game.js:50`）；写下的每个数都点名它依据哪条边的哪个数。
    玩家写了与线索矛盾的数时，提示只说矛盾、**不扣提示次数、也绝不偷偷改掉你的数字**（`js/ui/game.js:199-205`）。
    复现：`bash tools/verify.sh` 的 `hint` 场景 —— 每形 198 条，本机 `totalHints: 472`、`charged: 16`、`spun: 25`。
 4. **难度是量出来的。** `band` 是选盘目标而不是装饰，`balance` 两道人审：每档 ≥75% 的样本要落进自己的带、
