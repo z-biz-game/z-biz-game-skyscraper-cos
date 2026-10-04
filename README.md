@@ -168,7 +168,7 @@
 - **读屏与键盘无障碍**：`aria-live` 状态行、`aria-pressed` 键盘、方向键选格都在（`index.html:112`、`index.html:116-118`），
   也断言了 `--touch-min` 是 44px，但**没有用任何读屏器实测过**，也没有键盘-only 的完整通关实测。
 - **低端机时延 / 真实小屏几何**：本轮几何断言全部在 1280×1024 桌面窗口量到（`cell: 64`）。
-  `layoutFor()` 的下限是 `Cell.min = 26` 而不是 44（`js/render/board.js:23`、`js/theme.js:58`），
+  `layoutFor()` 的下限是 `Cell.min = 26` 而不是 44（`js/render/board.js:15`、`js/theme.js:58`），
   390px 视口上的实际格宽**未实测**。
 - **Electron 桌面壳**：`electron/main.cjs`、`electron/preload.cjs` 只过了 `node --check`（`npm run check`）。
   本机没有 `node_modules`、没有 `package-lock.json`，**Electron 从未被安装或启动过**。

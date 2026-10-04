@@ -323,7 +323,7 @@ play 49 + conflict 37 + hint 198 + stats 45 = 507 条`，0 失败。
 5. `tools/engine-test.mjs:17-25` 的章节清单列了 8 节，实际 `sec()` 调用是 9 个（缺
    `每一步都当场可验`，`tools/engine-test.mjs:658`），输出里也是 `章节 9 节`。
 6. `js/main.js:135` 说 `availBox()` 的修法是"让 6×6 在手机上守住 `js/theme.js` 写的 44px 触控下限"，
-   但渲染器的下限其实是 `Cell.min = 26`（`js/render/board.js:23`、`js/theme.js:58`）；
+   但渲染器的下限其实是 `Cell.min = 26`（`js/render/board.js:15`、`js/theme.js:58`）；
    `css/game.css:299` 与 `:446-449` 自己承认 390px 视口上曾经掉到 42px，并把 343 CSS px 当成守住 44 的先决条件
    （这一条我按 `layoutFor()` 反解确认算术成立：`(343-24)/(6+2×0.62) = 44.06`），但**真机掉不掉穿仍未实测**。
 7. `11881a5` 带来的两条新缺口（本轮记下来，没修）：

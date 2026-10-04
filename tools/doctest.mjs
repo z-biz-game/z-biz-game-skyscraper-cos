@@ -590,7 +590,7 @@ const ANCHORS = [
   ['tools/scenarios.js', 752, '4000000'], ['tools/engine-test.mjs', 473, '致命图案'], ['tools/engine-test.mjs', 1544, 'sec('],
   ['tools/engine-test.mjs', 740, '60,000,000'], ['js/main.js', 564, 'Hall'], ['js/main.js', 135, '44 px touch floor'],
   ['js/ui/game.js', 50, 'this.script = solve(puzzle.board).rows'], ['js/ui/game.js', 268, 'row.rule.text'],
-  ['js/store.js', 6, 'skyscraper.save.v1'], ['js/render/board.js', 23, 'layoutFor'], ['js/theme.js', 58, 'min: 26'],
+  ['js/store.js', 6, 'skyscraper.save.v1'], ['js/render/board.js', 15, 'layoutFor'], ['js/theme.js', 58, 'min: 26'],
   ['css/game.css', 447, '44'], ['js/engine/rng.js', 39, 'dateSeed'], ['index.html', 112, 'aria-live'],
 ];
 const citeSet = new Set(cites.map((c) => `${c[1]}:${c[2]}`));
