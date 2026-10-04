@@ -189,7 +189,7 @@ echo "  sabotage rc=$SAB_RC · 全量日志 /tmp/skyscraper-sabotage.log"
 # 部署集闸：ci.yml 的 check 作业跑这两步、本地整闸以前一次都不跑（59 仓同形）。「本地全绿、线上
 # 404 自己的 manifest / sw.js / 图标」这一类坏法缺的就是这一步。它只 assemble 到临时目录，不碰
 # Chrome，所以和上面两道纯逻辑闸同一档。
-echo "=== node tools/deploy-set.mjs（部署集闸）==="
+echo "=== deploy-set ==="
 node tools/deploy-set.mjs >/tmp/skyscraper-deploy-set.log 2>&1
 DS_RC=$?
 grep -E '^  FAIL|^部署集' /tmp/skyscraper-deploy-set.log | tail -12
