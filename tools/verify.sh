@@ -169,7 +169,7 @@ node tools/doctest.mjs >/tmp/skyscraper-doctest.log 2>&1
 DOCTEST_RC=$?
 grep -E '^  FAIL|^合计' /tmp/skyscraper-doctest.log | tail -20
 DT_ROWS=$(sed -n 's/^rows: \([0-9]*\) .*$/\1/p' /tmp/skyscraper-doctest.log | tail -1)
-echo "  doctest rc=$DOCTEST_RC rows=${DT_ROWS:-无 rows 行}（钉的是 $DOCTEST_ROWS_WANT）· 全量日志 /tmp/skyscraper-doctest.log"
+echo "  doctest rc=$DOCTEST_RC rows=${DT_ROWS:-无 rows 行}（钉的是 ${DOCTEST_ROWS_WANT}）· 全量日志 /tmp/skyscraper-doctest.log"
 [ "$DOCTEST_RC" = 0 ] || { echo "doctest FAILED：文档里的某个现值与代码/重算不符（见上面 FAIL 行）" >&2; FAILED=1; }
 [ "${DT_ROWS:-0}" = "$DOCTEST_ROWS_WANT" ] || {
   echo "doctest 断言条数 ${DT_ROWS:-解析不到} ≠ 钉住的 $DOCTEST_ROWS_WANT —— 少一条就是有人删了一段检查却没改这一钉" >&2
@@ -182,7 +182,7 @@ SAB_RC=$?
 grep -E '^  (ERROR|刀红了|没红|对照|红得住)|^- K|^ledger' /tmp/skyscraper-sabotage.log | tail -24
 echo "  sabotage rc=$SAB_RC · 全量日志 /tmp/skyscraper-sabotage.log"
 [ "$SAB_RC" = 0 ] || {
-  echo "sabotage FAILED rc=$SAB_RC：有刀没能把文档闸弄红并点名（工作树脏时它也会以 rc=2 拒绝下刀）" >&2
+  echo "sabotage FAILED rc=${SAB_RC}：有刀没能把文档闸弄红并点名（工作树脏时它也会以 rc=2 拒绝下刀）" >&2
   FAILED=1
 }
 
