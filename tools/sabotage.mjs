@@ -95,7 +95,7 @@ const KNIVES = [
     needle: 'js/library.js:143-148',
     repl: 'js/library.js:145-148',
     expect: '从文档现推的每一个锚点都坐在被指的那几行里',
-    rc: '待跑',
+    rc: '1',
   },
 ];
 
