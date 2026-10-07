@@ -40,12 +40,12 @@
 | `js/ui/game.js` | 可玩状态机：一次手势 = 一步撤销、`hint()` 走的是**线索**推出来的脚本、胜利判定用 `verify()` | 自己写一句提示文案（见 §4） |
 | `js/render/board.js` | Canvas 绘制 + 命中几何（`layoutFor`），与 `hitCell` 共用同一份布局 | 任何判断（"这条边对上了"来自引擎） |
 | `js/theme.js` `js/audio/synth.js` | 色板/间距/动效/触控下限的单一来源；WebAudio 合成音效 | 硬编码副本（CSS 通过 `--touch-min` 拿同一个数） |
-| `js/main.js` | 接线 + `window.skyscraper` / `window.App` 双面（`js/main.js:922-923`） | 判定（注释在 `js/main.js:1-4` 就划了这条线） |
+| `js/main.js` | 接线 + `window.skyscraper` / `window.App` 双面（`js/main.js:969-970`） | 判定（注释在 `js/main.js:1-4` 就划了这条线） |
 | `tools/engine-test.mjs` | 1976 条断言、9 节，纯 Node | 浏览器 |
 | `tools/balance.mjs` | 现场抽题量阶梯，两道人审 | 读任何写死的表（`tools/balance.mjs:1-3`） |
 | `tools/bake.mjs` | 写 `levels.js`，并用 `--check` 把每个印出的数字重算回去 | 墙钟时间 |
 | `tools/verify.sh` `tools/playtest.cjs` `tools/scenarios.js` | 真 Chrome + CDP：DOM 几何、画布像素、真 localStorage，两种 URL 形态各一遍 | 内部标志位（断言只读 DOM/像素/存档） |
-| `tools/doctest.mjs` | 文档数字闸：README/DESIGN 印出的每一个现值都从引擎当场重算再对，分 D1–D14 十四组，全跑 276 条断言 | 抄文档里的数（它只认自己重算出来的那一版） |
+| `tools/doctest.mjs` | 文档数字闸：README/DESIGN 印出的每一个现值都从引擎当场重算再对，分 D1–D14 十四组，全跑 281 条断言 | 抄文档里的数（它只认自己重算出来的那一版） |
 | `tools/sabotage.mjs` | 破坏台账：把每一类谎各写回树里一遍，要求 `tools/doctest.mjs` **点名**变红，再从内存里那份字节恢复 | 用 git 恢复（本工作区禁用那几条命令，见 §7 最后一行） |
 
 一个刻意的事实：`countNaive` **只在 `tools/` 和页内测试场景里被调用**；`countSolutions` 在 `js/` 里只有一个调用点，
@@ -208,8 +208,8 @@
 | 引擎保证 | `node tools/engine-test.mjs` | 1976 条断言 / 9 节（`11881a5` 前 1879）；期望值是**纸上演算写死的字面量**，绝不从求解器读回来（`tools/engine-test.mjs:1-15`） |
 | 阶梯 | `node tools/balance.mjs` | 入带率 + 中位数严格递增 + 线索轴生效 + Stirling 行 + 每样本三套实现对拍，**外加逐题的穷举举证账**：`handed ≥ 1 && proved ≥ 1`、`交给它 = 证完 + 四类拒绝`、`maxNodes < proof.budget` 压线即红（`tools/balance.mjs:133-137`）。CI 口径是 `SAMPLES: "12"`（`.github/workflows/ci.yml:43`），文档口径是 24 |
 | 出厂重算 | `node tools/bake.mjs --check` | §6 的语义 + 逐字节两件事 |
-| 文档数字 | `node tools/doctest.mjs` | README/DESIGN 印出去的每一个现值：阶梯表、入带率与中位链、拒绝统计、穷举台账、墙探针、出厂 20 关的三票、规则开火普查、`>>>FIXTURE` 夹具表、端口与 `SAMPLES` 口径、`file:NN` 引用（142 条范围 + 57 条锚点）、`DESIGN.md §N` 的"几处"那句自己、D1–D14 十四组与 `EXPECT_ROWS` 自钉。它**不重测墙钟**，也不抄文档的数：全部当场重算 |
-| 破坏台账 | `node tools/sabotage.mjs` | 全绿不等于闸会红。六把刀逐把把一类谎写回树里（`TIERS` 带、出厂关卡的线索串、README 那句"1976 条"、`verify.sh` 的 want 端口、`js/` 反向 import `tools/` 那一类缺席检查、`scenarios.js` 夹具字段），每把都要求 doctest `rc≠0` **且**点名它杀的那条断言，FAIL 行原文留在日志里；恢复用的是下刀前读进内存的那份字节（不是 `git checkout`/`restore`——本工作区禁用），盖回台账的 rc 是真读回来的 |
+| 文档数字 | `node tools/doctest.mjs` | README/DESIGN 印出去的每一个现值：阶梯表、入带率与中位链、拒绝统计、穷举台账、墙探针、出厂 20 关的三票、规则开火普查、`>>>FIXTURE` 夹具表、端口与 `SAMPLES` 口径、`file:NN` 引用（145 条范围 + 57 条锚点）、同一份文档再现推锚点 12 条（其中手抄表没钉的 3 条由这一格自己数）、`DESIGN.md §N` 的"几处"那句自己、D1–D14 十四组与 `EXPECT_ROWS` 自钉。它**不重测墙钟**，也不抄文档的数：全部当场重算 |
+| 破坏台账 | `node tools/sabotage.mjs` | 全绿不等于闸会红。7 把刀逐把把一类谎写回树里（`TIERS` 带、出厂关卡的线索串、README 那句"1976 条"、`verify.sh` 的 want 端口、`js/` 反向 import `tools/` 那一类缺席检查、`scenarios.js` 夹具字段、把一句 `file:NN` 引用的起始行挪两行），每把都要求 doctest `rc≠0` **且**点名它杀的那条断言，FAIL 行原文留在日志里；恢复用的是下刀前读进内存的那份字节（不是 `git checkout`/`restore`——本工作区禁用），盖回台账的 rc 是真读回来的。刀数由 `D14g` 与文档对账（这一句写 7 把，台账就得真有 7 把） |
 | 浏览器 | `bash tools/verify.sh` | 真 Chrome：DOM 几何、画布像素、真 localStorage。**两种形态各 8 场景 = 507 条**（`tools/verify.sh:33` 的注册表）。前四道 Node 闸从建仓起就在 CI 里跑，这一条不是——`browser` 作业是 `5c59352` 才加的，同一 SHA 的 runner 日志里两个步骤各自 `success`。表中后两道（文档数字、破坏台账）与 `bash tools/verify.sh` 里的那两条逻辑闸是同一条命令，CI 没有只属于自己的门 |
 
 `verify.sh` 为什么要把同一组场景跑两遍（根 `5313`、前缀 `5323/<repo>/`）：根形态是本地服务器能**意外**满足的形态，
@@ -256,7 +256,7 @@ play 49 + conflict 37 + hint 198 + stats 45 = 507 条`，0 失败。
 但这个一致性只靠"两份代码相同"，没有断言钉。另注意 `js/engine/rng.js` 的 `makeRng`/`hash32`
 在当前出货路径上**没有被任何模块 import**（只用了 `dateSeed`）。
 
-`window.skyscraper` 与 `window.App` 是同一个对象的两个名字（`js/main.js:919-923`），
+`window.skyscraper` 与 `window.App` 是同一个对象的两个名字（`js/main.js:969-970`），
 验证台走的是玩家那套提交路径（`surface.tap` / `surface.stroke`，`js/main.js:861-869`），
 所以场景绿了等于真状态机绿了。
 
@@ -315,7 +315,7 @@ play 49 + conflict 37 + hint 198 + stats 45 = 507 条`，0 失败。
    本轮重跑这两个读数**逐字复现**（3,395,743 / 20,053 在 README 台账与 A/B 探针里各出现一次，同为这两个数）。
 3. ~~`js/engine/generate.js:21-22`：大师 `p50 38 ms / p90 194 ms`、并说"uniqueness re-check included" ——
    本轮 12/23，而那个计时**不含**唯一性复核~~ → **`11881a5` 已闭合方向，没闭合数字**：复核现在真的在
-   `makePuzzle` 里面（`generate.js:253`），`balance.mjs:109-111` 的计时因此确实包住了它，
+   `makePuzzle` 里面（`generate.js:253` 的 `countSolutions` 调用），`balance.mjs:109-111` 的计时因此确实包住了它，
    "re-check included"那句不再说谎；但同一台机器本轮读到的是 **45 / 256 ms**，注释写的 38 / 194 是另一轮负载下的读数。
    **绝对毫秒数不该钉在注释里**这件事仍然成立，注释本轮未再改（改它是文案工作，不是正确性问题）。
 4. 出厂章节文案 `六阶的 Hall 家族` / "Hall 家族才解得开"（`tools/bake.mjs:95`、`js/main.js:564`）

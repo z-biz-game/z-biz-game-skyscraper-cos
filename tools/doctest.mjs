@@ -643,10 +643,86 @@ ok(docPaths.length >= 15 && docPaths.every((p) => existsSync(join(ROOT, p))),
   `D10d 文档点名的 ${docPaths.length} 个源文件都还在树里（删一个工具就得同时删掉提到它的话）`,
   docPaths.filter((p) => !existsSync(join(ROOT, p))).join('，') || '全部存在');
 {
-  const quoted = DOCS.match(/（(\d+) 条范围 \+ (\d+) 条锚点）/);
-  ok(!!quoted && +quoted[1] === cites.length && +quoted[2] === ANCHORS.length,
-    `D10e 文档抄的那句「N 条范围 + M 条锚点」等于这一次真的解析到的条数`,
-    quoted ? `文档 ${quoted[1]}/${quoted[2]} vs 本次 ${cites.length}/${ANCHORS.length}` : '解析不到那句');
+  const quoted = [...DOCS.matchAll(/（(\d+) 条范围 \+ (\d+) 条锚点）/g)].map((m) => [+m[1], +m[2]]);
+  ok(quoted.length >= 1 && quoted.every(([a, b]) => a === cites.length && b === ANCHORS.length),
+    `D10e 文档抄的那句「N 条范围 + M 条锚点」等于这一次真的解析到的条数（共 ${quoted.length} 处，每一处都得对）`,
+    quoted.length ? `文档 ${quoted.map(([a, b]) => `${a}/${b}`).join(' ')} vs 本次 ${cites.length}/${ANCHORS.length}` : '解析不到那句');
+}
+
+// ---- D10f–i 锚点从文档现推：手抄表没覆盖的那些也逃不掉 ------------------------------------
+// 上面那张 ANCHORS 是手抄的：它保证"抄进表的那几行"落得准，可文档里没被抄进表的引用只过了
+// 范围检查。本轮抓到的就是这一格漏的：`js/main.js:922-923` 的 `window.App` 其实在 969-970，
+// 922 在 1089 行的文件里当然"不越界"，于是它一路绿。这一段拿同一份文档当输入现推锚点——
+// 贴着引用的那个反引号名字，必须真的出现在被指的那几行里。口径与家族其余仓的同一份。
+// 口径写死在这里，别让读的人猜：一条锚点 = (文件, 行段, 名字) 这个三元组，同一处被两份文档各写一次
+// 只算一条（mentions 另外打出来）；拿不到名字的裸 `path:NN` 这一段一条都不核，那部分仍只过 D10 的范围检查——
+// 这就是 README「这条腿没覆盖什么」那一句的来源。
+const FLEET_CITE = /^([\w./-]+\.(?:js|mjs|cjs|sh|json|html|yml|css)):(\d+)(?:-(\d+))?$/;
+const FLEET_ID = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/;
+const tokOf = (body) => {
+  const seg = body.includes('::') ? body.slice(body.lastIndexOf('::') + 2) : body;
+  if (seg.includes('/')) return '';
+  const head = seg.split('(')[0].trim();
+  if (FLEET_ID.test(head)) return head;
+  const lhs = head.split(/[=:]\s/)[0].trim();
+  return FLEET_ID.test(lhs) ? lhs : '';
+};
+const seenAnchor = new Set();
+const derived = [];
+let derivedMentions = 0;   // 同一处锚点在两份文档里各写一次时，只算一条（口径：锚点是"哪一行 + 哪个名字"，不是提及次数）
+{
+  const spans = [...DOCS.matchAll(/`([^`\n]+)`/g)].map((m) => ({ body: m[1], s: m.index, end: m.index + m[0].length }));
+  for (let i = 0; i < spans.length; i++) {
+    const c = spans[i].body.match(FLEET_CITE);
+    if (!c) continue;
+    let anchor = '';
+    const next = spans[i + 1];
+    if (next) {
+      const gap = DOCS.slice(spans[i].end, next.s);
+      const g = gap.replace(/\s+/g, '');
+      if (gap.length <= 4 && !gap.includes('\n') && (/^[（(]/.test(g) || g === '的')) anchor = tokOf(next.body);
+    }
+    if (!anchor && i > 0) {
+      const prev = spans[i - 1];
+      const gap = DOCS.slice(prev.end, spans[i].s);
+      const g = gap.replace(/\s+/g, '');
+      if (anchor === '' && gap.length <= 4 && !gap.includes('\n') && !/\s/.test(prev.body) &&
+        (/^[（(]/.test(g) || /[\w一-鿿]/.test(g))) anchor = tokOf(prev.body);
+    }
+    if (!anchor) continue;
+    const from = +c[2];
+    const to = +(c[3] || c[2]);
+    const key = `${c[1]}:${from}-${to}:${anchor}`;
+    if (seenAnchor.has(key)) { derivedMentions++; continue; }
+    seenAnchor.add(key);
+    derived.push({ file: c[1], from, to, anchor, label: `${c[1]}:${from}${c[3] ? '-' + c[3] : ''}` });
+  }
+}
+const dMiss = [];
+for (const d of derived) {
+  const src = linesOf(d.file);
+  if (!src) { dMiss.push(`${d.label} 解析不到文件`); continue; }
+  if (d.to > src.length) { dMiss.push(`${d.label} 越界（只有 ${src.length} 行）`); continue; }
+  if (!src.slice(d.from - 1, d.to).join('\n').includes(d.anchor)) dMiss.push(`${d.label} 那几行里没有 ${d.anchor}`);
+}
+ok(dMiss.length === 0, `D10f 从文档现推的每一个锚点都坐在被指的那几行里（手抄表漏掉的那些也红）`,
+  dMiss.length ? `漂 ${dMiss.length} 处：${dMiss.slice(0, 6).join('，')}` : `现推 ${derived.length} 条（另有 ${derivedMentions} 次是同一处的重复提及），全部落回原处`);
+// 现推的那一套比手抄表多出来的部分才是这段的新覆盖面；一个都没有就说明它只是把表抄了一遍。
+const tableCovers = (d) => ANCHORS.some(([f, l]) => resolve(f) === resolve(d.file) && l >= d.from && l <= d.to);
+const beyondTable = derived.filter((d) => !tableCovers(d));
+ok(derived.length >= 12 && beyondTable.length >= 2,
+  `D10g 现推锚点不是把 ANCHORS 重抄一遍（少于 12 条就是解析断了，表外少于 2 条就是没有新覆盖面）`,
+  `现推 ${derived.length} 条 · 其中手抄表没钉的 ${beyondTable.length} 条：` +
+    (beyondTable.map((d) => `${d.label} 的 ${d.anchor}`).join('，') || '一条都没有——这段就只是在重抄那张表'));
+{
+  const quoted = [...DOCS.matchAll(/现推锚点 (\d+) 条/g)].map((m) => +m[1]);
+  ok(quoted.length >= 1 && quoted.every((v) => v === derived.length),
+    `D10h 文档抄的「现推锚点 N 条」等于这一次从文档推出来的条数（删掉这个数字同样算红）`,
+    `闸数到 ${derived.length} · 文档写了 ${quoted.length} 处：${[...new Set(quoted)].join('/') || '一处都没写'}`);
+  const outClaims = [...DOCS.matchAll(/手抄表没钉的 (\d+) 条/g)].map((m) => +m[1]);
+  ok(outClaims.length >= 1 && outClaims.every((v) => v === beyondTable.length),
+    `D10i 文档抄的「手抄表没钉的 N 条」等于这一次表外的那几条（这一格就是上面那条漏口的账）`,
+    `闸数到 ${beyondTable.length} · 文档写了 ${outClaims.length} 处：${[...new Set(outClaims)].join('/') || '一处都没写'}`);
 }
 
 // ---- D11 表示层常数 + 「js/ 不读 tools/」那一类反向扫描 ------------------------------------
@@ -757,7 +833,7 @@ ok(!/D\d+[^\d]{0,4}ms|断言\s*D\d+/.test(README), 'D13b 文档没有把任何 D
 // 这一节是全闸的「反空转」兜底：前面任何一个组整段被删，emitted 就少一格、rows 就对不上钉的
 // EXPECT_ROWS —— 两种删法（改代码 / 改文档）都会红。D14c/D14d 故意排在两条 ok 之后，
 // 那时 D14 自己也已经进了 emitted。
-const EXPECT_ROWS = 276;
+const EXPECT_ROWS = 281;
 const GROUPS_TOTAL = 14;
 const groupClaims = [...DOCS.matchAll(/D1[–-]D?(\d+)/g)].map((m) => +m[1]);
 ok(groupClaims.length >= 1 && groupClaims.every((v) => v === GROUPS_TOTAL),
@@ -778,6 +854,12 @@ const rowsQuotes = [...DOCS.matchAll(/rows: (\d+) fail: 0/g)].map((m) => +m[1])
 ok(rowsQuotes.length >= 3 && rowsQuotes.every((v) => v === EXPECT_ROWS),
   `D14e 文档抄的 doctest 条数（rows 尾巴与「全跑 N 条断言」，共 ${rowsQuotes.length} 处）等于钉的 ${EXPECT_ROWS}`,
   rowsQuotes.length ? rowsQuotes.join('/') : '解析不到');
+// 台账的刀数是文档里另一个现值：加一把、删一把、把某把改名，文档那句都得跟着改，不然这一条红。
+const knifeCount = [...read('tools/sabotage.mjs').matchAll(/^    id: '(K\d+)',/gm)].length;
+const knifeClaims = [...DOCS.matchAll(/(\d+) 把刀/g)].map((m) => +m[1]);
+ok(knifeCount >= 6 && knifeClaims.length >= 1 && knifeClaims.every((v) => v === knifeCount),
+  `D14g 文档写的「N 把刀」等于台账上真的有几把（${knifeCount}）——刀加了没写进文档，或写了却没这把刀，都红`,
+  `台账 ${knifeCount} 把 · 文档写了 ${knifeClaims.length} 处：${knifeClaims.join('/') || '一处都没写'}`);
 // 这一条自己也要被数进去：ok() 在比较之后才 rows++，所以这里比的是 rows + 1 = 尾巴上那个合计。
 ok(rows + 1 === EXPECT_ROWS, `D14f 这一次跑出的断言条数（含这一条）等于钉在文件里的 EXPECT_ROWS（${EXPECT_ROWS}）`,
   `实测 ${rows} + 1 vs 钉的 ${EXPECT_ROWS}：删掉一条 test 就得同时改这里，改错了就红`);

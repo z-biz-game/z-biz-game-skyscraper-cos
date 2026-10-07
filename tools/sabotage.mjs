@@ -3,8 +3,8 @@
 //   node tools/sabotage.mjs          跑台账里全部刀
 //   node tools/sabotage.mjs K1 K4    只跑点名的那几把（调试用；部分刀不回写 rc 列）
 //
-// 为什么要有这个文件：`node tools/doctest.mjs` 报的 276 条全绿只说明这一轮没有东西坏，
-// 它没说这 276 条**会不会红**。本仓 README 的「文档纪律」写的就是这一条：文档是承诺，代码是事实——
+// 为什么要有这个文件：`node tools/doctest.mjs` 报的全绿（条数由它文件里的 `EXPECT_ROWS` 钉住，verify.sh 再钉一次）
+// 只说明这一轮没有东西坏，它没说那些断言**会不会红**。本仓 README 的「文档纪律」写的就是这一条：文档是承诺，代码是事实——
 // 那么"文档抄错一个数就会红"这件事本身也必须被证明过，而不是被相信着。
 //
 // 五条规矩（照 z-biz-game-kurotto-cos / minishop 的机制，第 4 条按本工作区的硬规矩改）：
@@ -89,6 +89,14 @@ const KNIVES = [
     expect: '全部由 Node 原样重算出来',
     rc: '1',
   },
+  {
+    id: 'K7', file: 'README.md', group: 'D10',
+    why: '把 README 那句引用的起点从 143 挪到 145：`dateSeedAt` 的声明在 143，挪完仍在文件行数内——范围那条腿一路绿，只有"锚点必须坐在被指的那几行里"这一条抓得到',
+    needle: 'js/library.js:143-148',
+    repl: 'js/library.js:145-148',
+    expect: '从文档现推的每一个锚点都坐在被指的那几行里',
+    rc: '待跑',
+  },
 ];
 
 const only = process.argv.slice(2);
@@ -108,7 +116,7 @@ for (const k of picked) {
   const hits = [...src.matchAll(new RegExp(k.needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))].length;
   if (hits !== 1) die(`${k.id} 的针在 ${k.file} 命中 ${hits} 次（必须恰好 1 次：打不中或打多了都不许跑）`);
   if (k.repl === k.needle) die(`${k.id} 的「改成」与针相同，这一刀不会改变任何东西`);
-  // 这条只是早一步的提示：连源文件里都找不到这几个字，说明那条断言被改名或删除，不必等六把刀跑完。
+  // 这条只是早一步的提示：连源文件里都找不到这几个字，说明那条断言被改名或删除，不必等全部刀跑完。
   // 它**不是**点名的证明——K3 第一版的 expect是一句转述，它在源文件里存在（躺在章节注释里），这里照样过，
   // 运行时那一关才把它抓住。真正的证明在下面：这一刀跑完，FAIL 行必须同时带上该组的编号和这条标签的原文。
   if (!gateSrc.includes(k.expect)) die(`${k.id} 期望点名的「${k.expect}」整份 tools/doctest.mjs 里都没有（那条断言被改名或删掉了）`);

@@ -164,7 +164,7 @@ NODEFIX
 # 不会留下任何 rc!=0 的痕迹，只有条数会。sabotage 是它的反证——每把刀必须把 doctest 弄红并点到大道的名。
 # 两条都在 CI 的 check 作业里以同样的命令跑（node tools/doctest.mjs / node tools/sabotage.mjs）。
 echo "=== node tools/doctest.mjs（文档数字闸）==="
-DOCTEST_ROWS_WANT=${DOCTEST_ROWS_WANT:-276}
+DOCTEST_ROWS_WANT=${DOCTEST_ROWS_WANT:-281}
 node tools/doctest.mjs >/tmp/skyscraper-doctest.log 2>&1
 DOCTEST_RC=$?
 grep -E '^  FAIL|^合计' /tmp/skyscraper-doctest.log | tail -20
