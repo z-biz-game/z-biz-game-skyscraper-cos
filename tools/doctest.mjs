@@ -719,14 +719,47 @@ let derivedMentions = 0;   // 同一处锚点在两份文档里各写一次时�
   }
 }
 const dMiss = [];
-for (const d of derived) {
+// 整词口径（家族同一份）：`clue` 坐在声明 `clueRuns` 的那一行上不算命中。子串口径比它替掉的那张手抄表
+// 更弱——一个短名字会"出现在"任何碰巧含它的标识符里——于是一次真的漂会被读成绿。上面 D10b 那张表核的是
+// 抄进去的字面串（`DESIGN.md §2`、`44 px touch floor` 这种不是标识符），所以整词只用在现推的这一格。
+const wordCache = new Map();
+const hasWord = (text, name) => {
+  if (!wordCache.has(name)) {
+    wordCache.set(name, new RegExp('(^|[^A-Za-z0-9_$])' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^A-Za-z0-9_$])'));
+  }
+  return wordCache.get(name).test(text);
+};
+// 抽成一个函数，是为了下面那把截前缀的刀走**同一条代码路径**（与 D10 那把空行刀同一手法）。
+const anchorMiss = (d) => {
   const src = linesOf(d.file);
-  if (!src) { dMiss.push(`${d.label} 解析不到文件`); continue; }
-  if (d.to > src.length) { dMiss.push(`${d.label} 越界（只有 ${src.length} 行）`); continue; }
-  if (!src.slice(d.from - 1, d.to).join('\n').includes(d.anchor)) dMiss.push(`${d.label} 那几行里没有 ${d.anchor}`);
+  if (!src) return `${d.label} 解析不到文件`;
+  if (d.to > src.length) return `${d.label} 越界（只有 ${src.length} 行）`;
+  if (!hasWord(src.slice(d.from - 1, d.to).join('\n'), d.anchor)) return `${d.label} 那几行里没有 ${d.anchor}`;
+  return '';
+};
+for (const d of derived) {
+  const miss = anchorMiss(d);
+  if (miss) dMiss.push(miss);
 }
-ok(dMiss.length === 0, `D10f 从文档现推的每一个锚点都坐在被指的那几行里（手抄表漏掉的那些也红）`,
-  dMiss.length ? `漂 ${dMiss.length} 处：${dMiss.slice(0, 6).join('，')}` : `现推 ${derived.length} 条（另有 ${derivedMentions} 次是同一处的重复提及），全部落回原处`);
+// 反空转的刀：从现推的锚点里挑一条，把名字截掉最后一格——截出来的串必须仍是被指那几行里某个标识符的
+// 子串（旧口径放它过），同时不是一个完整标识符（新口径必须拦）。一把都挑不出来时是 null：那条断言当场红，
+// 而不是静默地少一把（口径退回子串的那一天，正是所有候选都"过"的那一天）。
+const wordKnife = (() => {
+  for (const d of derived) {
+    const src = linesOf(d.file);
+    if (!src) continue;
+    const body = src.slice(d.from - 1, d.to).join('\n');
+    const cut = d.anchor.slice(0, -1);
+    if (cut.length < 3 || !body.includes(d.anchor) || !body.includes(cut)) continue;
+    const miss = anchorMiss({ ...d, anchor: cut });
+    if (miss) return { label: d.label, cut, miss };
+  }
+  return null;
+})();
+ok(dMiss.length === 0 && !!wordKnife, `D10f 从文档现推的每一个锚点都作为完整标识符坐在被指的那几行里（整词口径；手抄表漏掉的那些也红，这一格自己带一把截前缀的刀）`,
+  dMiss.length ? `漂 ${dMiss.length} 处：${dMiss.slice(0, 6).join('，')}`
+    : (wordKnife ? `现推 ${derived.length} 条（另有 ${derivedMentions} 次是同一处的重复提及），全部落回原处 · 刀在 ${wordKnife.label} 截成 ${wordKnife.cut}`
+      : '一把截前缀的刀都挑不出来——整词那一格没被测过'));
 // 现推的那一套比手抄表多出来的部分才是这段的新覆盖面；一个都没有就说明它只是把表抄了一遍。
 const tableCovers = (d) => ANCHORS.some(([f, l]) => resolve(f) === resolve(d.file) && l >= d.from && l <= d.to);
 const beyondTable = derived.filter((d) => !tableCovers(d));
