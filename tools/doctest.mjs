@@ -560,15 +560,35 @@ const linesOf = (f) => {
   }
   return lineCache.get(real);
 };
+// 一条引用的三道查抽成一个函数，是因为下面那把刀要走**同一条代码路径**：把空行那一道删掉，
+// oob 照样全绿，只有这一把会立刻红——否则新加的那道查就是没有对照的等式。
+const citeMiss = (file, fromRaw, toRaw) => {
+  const src = linesOf(file);
+  if (!src) return `${file}（文件不存在）`;
+  const from = +fromRaw;
+  const to = +(toRaw || fromRaw);
+  const label = `${file}:${fromRaw}${toRaw ? '-' + toRaw : ''}`;
+  if (from > src.length || to > src.length) return `${label}（只有 ${src.length} 行）`;
+  // 「在界内」不等于「指到了代码」：不带名字的裸引用只过这一道范围检查（D10f 那段写明它不核锚点），
+  // 所以整段空白的情况必须在这里红——否则它指着的是一片行距，两道查都会放它过。
+  if (src.slice(from - 1, to).join('').trim() === '') return `${label} 那几行整段是空行`;
+  return '';
+};
 const oob = [];
 for (const c of cites) {
-  const src = linesOf(c[1]);
-  if (!src) { oob.push(`${c[1]}（文件不存在）`); continue; }
-  const hi = +(c[3] || c[2]);
-  if (+c[2] > src.length || hi > src.length) oob.push(`${c[1]}:${c[2]}${c[3] ? '-' + c[3] : ''}（只有 ${src.length} 行）`);
+  const miss = citeMiss(c[1], c[2], c[3]);
+  if (miss) oob.push(miss);
 }
-ok(oob.length === 0, `D10 每一条 path:NN 都落在真实文件的行数内（${cites.length} 条）`,
-  oob.length ? `越界：${oob.slice(0, 4).join('，')}` : '全部在范围内');
+// 反空转的刀：目标行号现量（`js/engine/skyscraper.js` 的第一处空行），不写死——写死的那个数会在
+// 有人填了那一行之后悄悄地不再测任何东西，`blankAt > 0` 把那天变成红。
+const probeBlank = linesOf('js/engine/skyscraper.js') || [];
+let blankAt = 0;
+for (let i = 1; i < probeBlank.length; i++) if (String(probeBlank[i]).trim() === '') { blankAt = i + 1; break; }
+const blankKnife = blankAt ? citeMiss('js/engine/skyscraper.js', blankAt, null) : '';
+ok(oob.length === 0 && blankAt > 0 && blankKnife.includes('整段是空行'),
+  `D10 每一条 path:NN 都落在真实文件的行数内、且不整段是空行（${cites.length} 条；这一格自己带一把指着空行的刀）`,
+  oob.length ? `越界或空行：${oob.slice(0, 4).join('，')}`
+    : (blankKnife || '（刀没红：空行那道查是摆设）') + ` · 真引用 ${cites.length} 条全在范围内`);
 const ANCHORS = [
   ['js/engine/skyscraper.js', 26, 'EMPTY'], ['js/engine/skyscraper.js', 28, 'SIDES'], ['js/engine/skyscraper.js', 50, 'clueIndex'],
   ['js/engine/skyscraper.js', 99, 'n + 1'], ['js/engine/skyscraper.js', 149, 'one:'], ['js/engine/skyscraper.js', 156, 'all:'],
