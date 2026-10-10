@@ -85,7 +85,6 @@ let pulse = null;
 let stroke = null;
 let baseElapsed = 0;
 let shown = 'menu';
-let paused = false;
 let clockRunning = false;
 let rafId = 0;
 // 0 = "还没喂过任何一帧" 的哨兵，不是时间戳：见 update() 里的 dt 首帧口径。
@@ -521,31 +520,6 @@ const blocked = () => paused || shown !== 'game';
 // breath stops, the audio context is put to sleep, and every gesture that could move ink is
 // refused. Resuming hands back the same board, the same marks and the same elapsed time — nothing
 // is re-derived, and nothing is re-timed.
-function setPaused(next) {
-  const want = !!next && shown === 'game' && (!game || game.status !== 'won');
-  if (want === paused) return paused;
-  paused = want;
-  if (paused) {
-    // Fold the run's virtual seconds into the banked elapsed *before* the loop stops counting them.
-    baseElapsed = clock();
-    sim.runSeconds = 0;
-    clockRunning = false;
-    Sound.setHeld(true);
-    el.pauseMeta.textContent = `${fmtMs(baseElapsed)} · ${game ? game.moves : 0} 步 · 提示 ${game ? game.hints : 0} 次`;
-    el.pauseVeil.hidden = false;
-    flushResume();
-  } else {
-    // Mute is the player's own switch and survives a resume; `held` was this pause's, so it clears.
-    Sound.setHeld(false);
-    clockRunning = !!game && game.status !== 'won';
-    sim.runSeconds = 0;
-    lastShownSecond = -1;
-    el.pauseVeil.hidden = true;
-  }
-  syncPauseButton();
-  dirty = true;
-  return paused;
-}
 
 function syncPauseButton() {
   const b = el.btnPause;
