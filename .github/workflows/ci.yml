@@ -22,13 +22,7 @@ jobs:
       # No npm install: the game has zero runtime dependencies, and pulling Electron into
       # CI to prove nothing is how a repo starts failing on a network flake.
       - name: Syntax check every source
-        run: |
-          for f in $(git ls-files 'js/*.js' 'js/*/*.js'); do node --check "$f" || exit 1; done
-          node --check server.cjs
-          node --check electron/main.cjs
-          node --check electron/preload.cjs
-          for f in $(git ls-files 'tools/*.mjs' tools/scenarios.js); do node --check "$f" || exit 1; done
-
+        run: npm run check
       # The real gate: every generated board must have one solution and be reachable by
       # pencil logic, and the two counters must agree cell by cell. A plain Node test, so
       # it guards merges without a browser.
@@ -49,7 +43,30 @@ jobs:
       - name: Entry files exist
         run: test -f index.html && grep -q '<canvas' index.html && grep -q 'js/main.js' index.html
 
-  # The four steps above are Node-side. `tools/verify.sh` is the fifth gate and, until this job
+      # Prose is a gate too: every number printed in README/DESIGN is re-derived from the engine on
+      # the spot (20 shipped boards re-solved + re-counted, 24 live puzzles per tier, the fired-rule
+      # census, the fixture table). The step is red if a doc number drifts OR if the gate itself
+      # quietly loses assertions (DOCTEST_ROWS_WANT is pinned in tools/verify.sh).
+      - name: Doc numbers match the engine (doctest)
+        run: node tools/doctest.mjs
+
+      # Green does not prove the gate can go red. The sabotage ledger writes each class of lie back
+      # into the tree, one knife at a time, and requires tools/doctest.mjs to fail *naming* the
+      # assertion it killed; then it restores from the bytes it read into memory before cutting.
+      # Same command as `npm run sabotage` and the same one tools/verify.sh runs — no CI-only gate.
+      - name: Sabotage ledger proves the doc gate bites
+        run: node tools/sabotage.mjs
+      # 部署集闸：按 tools/assemble-site.sh 那份清单真拷一遍产物，要求页面会去要的东西
+      # 都在里面。这一仓曾经因为清单落后于页面而线上 404 自己的 manifest/sw.js/图标，
+      # 而本地一切全绿——因为本地根本没有「按清单拷」这一步。
+      - name: Deploy set gate
+        run: node tools/deploy-set.mjs
+      # 阴性自证：每一类断言当场被打红一次，闸必须点名吃掉那一刀；写在注释里的假路径
+      # 必须不算引用。钉住的条数由这一跑证明它真的会红，不是由记性证明。
+      - name: Deploy set gate proves it can fail
+        run: node tools/deploy-set-selftest.mjs
+
+  # The six steps above are Node-side. `tools/verify.sh` is the seventh gate and, until this job
   # existed, CI had never run it: 507 browser assertions per URL shape (first seed rules unique
   # play conflict hint stats) measured 2026-09-28 on the author's machine, twice, and never once on
   # a runner. A gate that is only ever run by hand is documentation, not a gate.

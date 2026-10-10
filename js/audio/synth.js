@@ -5,14 +5,17 @@
 let ctx = null;
 let master = null;
 let enabled = true;
-// `held` is the pause / backgrounded latch. It is separate from `enabled` because the two are
-// released by different things: the player's mute switch, and the run's own state machine.
-let held = false;
-// Every oscillator this module has ever created. A muted or held tab must leave this number
-// untouched — that is the difference between "the volume is 0" and "the instrument is off".
-let voices = 0;
+// 静音偏好：读回存档。放在模块顶层，这样每次 init（首屏、开局、重开）都拿到同一个答案，
+// 重开一局不会把玩家的静音选择洗掉。
+try {
+  if (localStorage.getItem('cos.mute') === '1') enabled = false;
+} catch { /* 读不到就沿用默认开声 */ }
+
 
 function audio() {
+  // 静音态第一行就返回：既不把已挂起的 ctx 拉起来，也不新建节点。
+  // 这条比 "gain 设 0" 强一档——静音时这个 AudioContext 根本没有在跑。
+  if (!enabled) return null;
   if (typeof AudioContext === 'undefined' && typeof webkitAudioContext === 'undefined') return null;
   if (!ctx) {
     const Ctor = typeof AudioContext !== 'undefined' ? AudioContext : webkitAudioContext;
@@ -76,9 +79,21 @@ function park() {
 
 export const Sound = {
   setEnabled(v) {
-    enabled = !!v;
-    park();
-    return enabled;
+    const on = !!v;
+    if (on === enabled) return;
+    enabled = on;
+    // 真静音：停掉 AudioContext 本身（时钟停、图不跑），不是把音量拧到 0。
+    if (ctx) {
+      if (on) {
+        if (ctx.state === 'suspended' && ctx.resume) ctx.resume().catch(() => {});
+      } else if (ctx.state === 'running' && ctx.suspend) {
+        ctx.suspend().catch(() => {});
+      }
+    }
+    // 偏好落盘：刷新页面后 init 要能读回静音态，不能自己弹回来。
+    try {
+      localStorage.setItem('cos.mute', on ? '1' : '0');
+    } catch { /* 隐私模式下写不进去也不该炸游戏 */ }
   },
   enabled: () => enabled,
 

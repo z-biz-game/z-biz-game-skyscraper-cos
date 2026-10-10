@@ -16,6 +16,7 @@ import {
   clearNotes,
   snapshot,
   undo as undoState,
+  resetInk,
   solve,
   verify,
   complete,
@@ -56,6 +57,32 @@ export class Game {
     this.selected = 0;
     this.lastHint = null;
     this.recompute();
+  }
+
+  // 重开**同一道题**：把这一局整个归零，题面不动。
+  //
+  // 陷阱就在这里：引擎的 resetInk() 只清了 st.cell / st.notes 与引擎 history，而撤销栈
+  // this.steps、步数 this.moves、提示次数 this.hints、提示游标 this.cursor、胜负
+  // this.status、临时态 this.mode、键盘选的数字 this.digit、键盘选中的格 this.selected、
+  // 上一条提示文案 this.lastHint 全挂在 UI 这一层的 Game 实例上，它一个都碰不到。
+  // 只调 resetInk() 当重开，这半局的痕迹会原封不动当成新局开场白，玩家还按得动撤销
+  // 回到走错那一步（实测 steps 6 → 6、cursor 40 → 40）。
+  //
+  // selected 与 digit 也要点名：本仓有纯键盘操作（方向键选格、数字键选数、回车落子），
+  // 重开时选中的格与选中的数字停留在上一局，玩家第一下回车会写进一个他没看见的格。
+  resetAll() {
+    resetInk(this.st);       // st.cell / st.notes 全回空 + 引擎 history 清空
+    this.steps = [];         // UI 撤销栈：resetInk 管不到，清的是引擎那份
+    this.moves = 0;          // 步数归零
+    this.hints = 0;          // 提示次数归零：提示要收钱，留着等于让玩家白嫖上一局的帮助
+    this.cursor = 0;         // 提示脚本从头再来，否则重开后的第一条提示会被跳过
+    this.status = 'playing'; // 胜负回判：上一局赢了也不能把重开后的盘算成已通关
+    this.mode = INK;         // 临时态：落笔模式回到默认
+    this.digit = 1;          // 键盘选中的数字回默认：停在上一局那个数上，第一下回车就写错
+    this.selected = 0;       // 键盘选中的格回第一格：同上
+    this.lastHint = null;    // 上一条提示文案属于上一局
+    this.recompute();        // diag / problems / dead 一并重算，否则面板上留着上一局的判词
+    return this;
   }
 
   recompute() {

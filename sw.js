@@ -1,71 +1,56 @@
-// Service worker — offline shell, and nothing else.
+'use strict';
+// 离线可用 + 永不被旧缓存钉住。
 //
-// Every same-origin GET is served **network-first, cache as the fallback**. A hand-written VERSION
-// plus cache-first would pin js/ and css/ to whatever the first visit cached, so a deploy that ships
-// a new index.html against old modules is a ghost state nobody can reproduce — and in this game that
-// is worse than no SW at all, because the shipped levels and the solver that verifies them are meant
-// to be the same numbers. VERSION still carries the cache name: it is what clears the stale entries
-// when the shell's shape changes, not a licence to serve stale code.
-//
-// Cross-origin requests are passed through untouched: there are none in this artifact, and
-// swallowing them would only make a future embed fail silently.
+// 两条实测换来的口径：
+//   1) 一律 **网络优先**，命中网络才回填缓存。手工 VERSION + cache-first 的组合，
+//      发出去的 HTML 会配上上一版的 js/css，出一个"新界面配旧逻辑"的鬼状态，
+//      而且玩家自己无法恢复（只能等缓存过期）。
+//   2) 缓存名带版本号（activate 时清掉非本版的名字）。改版**不需要**同步 bump：
+//      同名文件重绘之后，网络优先这一条保证客户端下一次联网就拿到新字节。
+const VERSION = 'skyscraper-cos-v1';
+const CACHE = `${VERSION}-shell`;
+const PRECACHE = ['index.html', 'manifest.webmanifest'];
 
-const VERSION = 'skyscraper-v1';
-const SHELL = [
-  './',
-  './index.html',
-  './css/game.css',
-  './manifest.webmanifest',
-  './js/main.js',
-  './assets/icons/icon-192.png',
-  './assets/icons/icon-512.png',
-  './assets/icons/apple-touch-icon.png',
-  './assets/texture/night-sky-512.png',
-];
-
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches
-      .open(VERSION)
-      .then((cache) => Promise.allSettled(SHELL.map((u) => cache.add(u))))
-      // A precache miss (an icon not deployed yet) must not abort the install and leave the old
-      // worker in place forever; the runtime path below still fills the cache as it goes.
-      .then(() => self.skipWaiting()),
+self.addEventListener('install', (ev) => {
+  // 首屏两件套先抓下来：断网时至少能打开界面，而不是浏览器的错误页。
+  ev.waitUntil(
+    caches.open(CACHE).then((c) => c.addAll(PRECACHE).catch(() => {})).then(() => self.skipWaiting())
   );
 });
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
+self.addEventListener('activate', (ev) => {
+  ev.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
+      .then((keys) => Promise.all(keys.filter((k) => !k.startsWith(VERSION)).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
-async function networkFirst(req) {
-  const cache = await caches.open(VERSION);
-  try {
-    const res = await fetch(req, { cache: 'no-cache' });
-    if (res && res.ok && (res.type === 'basic' || res.type === 'default')) cache.put(req, res.clone());
-    return res;
-  } catch (err) {
-    const hit = await cache.match(req, { ignoreSearch: true });
-    if (hit) return hit;
-    if (req.mode === 'navigate') {
-      const shell = await cache.match('./index.html');
-      if (shell) return shell;
-    }
-    throw err;
-  }
-}
-
-self.addEventListener('fetch', (event) => {
-  const req = event.request;
+self.addEventListener('fetch', (ev) => {
+  const req = ev.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-  // A POST-shaped navigation or an opaque request has no business being answered from our cache.
-  if (req.mode === 'navigate' && !url.pathname.endsWith('.html') && !url.pathname.endsWith('/')) return;
-  event.respondWith(networkFirst(req));
+
+  ev.respondWith(
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy));
+        }
+        return res;
+      })
+      .catch(async () => {
+        const hit = await caches.match(req);
+        if (hit) return hit;
+        // 导航请求（地址栏/刷新/桌面图标）离线时回落到缓存的那份壳，不白屏。
+        if (req.mode === 'navigate') {
+          const shell = await caches.match('index.html');
+          if (shell) return shell;
+        }
+        return Response.error();
+      })
+  );
 });

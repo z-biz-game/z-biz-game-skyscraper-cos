@@ -158,6 +158,48 @@ process.exit(bad ? 1 : 0);
 NODEFIX
 )" || FAILED=1
 
+# ---- the two prose gates --------------------------------------------------------------------------------
+# doctest 读 README/DESIGN 印出去的每一个现值，并当场从引擎重算（出厂 20 关重解+两个独立穷举器、每档 24 题
+# 重造、开火普查、夹具表）。它自己数得出跑了多少条断言，所以这里再钉一次 DOCTEST_ROWS_WANT：整段被删的闸
+# 不会留下任何 rc!=0 的痕迹，只有条数会。sabotage 是它的反证——每把刀必须把 doctest 弄红并点到大道的名。
+# 两条都在 CI 的 check 作业里以同样的命令跑（node tools/doctest.mjs / node tools/sabotage.mjs）。
+echo "=== node tools/doctest.mjs（文档数字闸）==="
+DOCTEST_ROWS_WANT=${DOCTEST_ROWS_WANT:-281}
+node tools/doctest.mjs >/tmp/skyscraper-doctest.log 2>&1
+DOCTEST_RC=$?
+grep -E '^  FAIL|^合计' /tmp/skyscraper-doctest.log | tail -20
+DT_ROWS=$(sed -n 's/^rows: \([0-9]*\) .*$/\1/p' /tmp/skyscraper-doctest.log | tail -1)
+echo "  doctest rc=$DOCTEST_RC rows=${DT_ROWS:-无 rows 行}（钉的是 ${DOCTEST_ROWS_WANT}）· 全量日志 /tmp/skyscraper-doctest.log"
+[ "$DOCTEST_RC" = 0 ] || { echo "doctest FAILED：文档里的某个现值与代码/重算不符（见上面 FAIL 行）" >&2; FAILED=1; }
+[ "${DT_ROWS:-0}" = "$DOCTEST_ROWS_WANT" ] || {
+  echo "doctest 断言条数 ${DT_ROWS:-解析不到} ≠ 钉住的 $DOCTEST_ROWS_WANT —— 少一条就是有人删了一段检查却没改这一钉" >&2
+  FAILED=1
+}
+
+echo "=== node tools/sabotage.mjs（破坏台账）==="
+node tools/sabotage.mjs >/tmp/skyscraper-sabotage.log 2>&1
+SAB_RC=$?
+grep -E '^  (ERROR|刀红了|没红|对照|红得住)|^- K|^ledger' /tmp/skyscraper-sabotage.log | tail -24
+echo "  sabotage rc=$SAB_RC · 全量日志 /tmp/skyscraper-sabotage.log"
+[ "$SAB_RC" = 0 ] || {
+  echo "sabotage FAILED rc=${SAB_RC}：有刀没能把文档闸弄红并点名（工作树脏时它也会以 rc=2 拒绝下刀）" >&2
+  FAILED=1
+}
+
+# 部署集闸：ci.yml 的 check 作业跑这两步、本地整闸以前一次都不跑（59 仓同形）。「本地全绿、线上
+# 404 自己的 manifest / sw.js / 图标」这一类坏法缺的就是这一步。它只 assemble 到临时目录，不碰
+# Chrome，所以和上面两道纯逻辑闸同一档。
+echo "=== deploy-set ==="
+node tools/deploy-set.mjs >/tmp/skyscraper-deploy-set.log 2>&1
+DS_RC=$?
+grep -E '^  FAIL|^部署集' /tmp/skyscraper-deploy-set.log | tail -12
+[ "$DS_RC" = 0 ] || { echo "deploy-set FAILED rc=${DS_RC}：页面会去要的东西不在部署产物里（见 /tmp/skyscraper-deploy-set.log）" >&2; FAILED=1; }
+echo "=== node tools/deploy-set-selftest.mjs（部署集闸的阴性自证）==="
+node tools/deploy-set-selftest.mjs >/tmp/skyscraper-deploy-set-selftest.log 2>&1
+DSS_RC=$?
+grep -E '^  (FAIL|没红|ERROR)|^合计|^rows: ' /tmp/skyscraper-deploy-set-selftest.log | tail -12
+[ "$DSS_RC" = 0 ] || { echo "deploy-set-selftest FAILED rc=${DSS_RC}：闸的某一类断言打不红（见 /tmp/skyscraper-deploy-set-selftest.log）" >&2; FAILED=1; }
+
 # ---- one shape -----------------------------------------------------------------------------------
 run_shape() {
   local shape=$1
