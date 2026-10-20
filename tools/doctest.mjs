@@ -562,6 +562,9 @@ const linesOf = (f) => {
 };
 // 一条引用的三道查抽成一个函数，是因为下面那把刀要走**同一条代码路径**：把空行那一道删掉，
 // oob 照样全绿，只有这一把会立刻红——否则新加的那道查就是没有对照的等式。
+// 闭合符那一形（整行只写 `}` / `done` / `fi`）在这里也判红：本轮两份文档的 145 条自带路径的引用
+// 一条都不落在这上面（现量：0 处），所以它是把 D10j 那一条的口径对齐到同一把尺，不是新加一道会红的查。
+const CLOSER = /^(?:[)\]};]+|done|fi|else|elif|esac|end|then|else:)$/;
 const citeMiss = (file, fromRaw, toRaw) => {
   const src = linesOf(file);
   if (!src) return `${file}（文件不存在）`;
@@ -572,6 +575,8 @@ const citeMiss = (file, fromRaw, toRaw) => {
   // 「在界内」不等于「指到了代码」：不带名字的裸引用只过这一道范围检查（D10f 那段写明它不核锚点），
   // 所以整段空白的情况必须在这里红——否则它指着的是一片行距，两道查都会放它过。
   if (src.slice(from - 1, to).join('').trim() === '') return `${label} 那几行整段是空行`;
+  if (from === to && CLOSER.test((src[from - 1] || '').trim()))
+    return `${label} 整行只写着块闭合符 ${JSON.stringify((src[from - 1] || '').trim())}`;
   return '';
 };
 const oob = [];
@@ -778,6 +783,114 @@ ok(derived.length >= 12 && beyondTable.length >= 2,
     `闸数到 ${beyondTable.length} · 文档写了 ${outClaims.length} 处：${[...new Set(outClaims)].join('/') || '一处都没写'}`);
 }
 
+// ---- D10j–l 裸续引要开得到文件，带空格的前挂名要回读得到 ------------------------------------
+// D10 的正则要求每条引用**自带路径**，D10f 现推锚点时又只认反引号里那条 `path:NN`——于是两份文档里
+// 那二十几条省掉文件名的 `:540`、`:184-204` 一次都没被开过文件：往 `js/engine/skyscraper.js` 插一行，
+// 这一整族会集体漂走而 D10/D10f 一声不响。第二条漏口是形状：D10f 的前挂那一道要求反引号里**不含空格**
+// （`!/\s/.test(prev.body)`），于是 `` `SAMPLES: "12"`（`.github/workflows/ci.yml:43`） `` 一直站在门外——
+// 43 行坐着 `- name: Entry files exist`，SAMPLES 的声明在 37：在界内、不空行、不是闭合符，两道查都放它过。
+// 三条口径是从别处的同一轮踩出来的，这里照搬：① 游标只被「文件名 + 行号」那条引用推动，只提文件名
+// 不提行号的那句不算（否则 `:144` 借去一份 15 行的夹具，"越界"反倒成了它唯一能证明的东西）；
+// ② 作用域 = 同一份文档里前面最近的那条完整引用，不做句子切分（切过一次的结论是 19 处真引用报出 23 个假红）；
+// ③ 名字仍由仓里现成的 tokOf 取第一段标识符，回到被引窗口**整词**比一次。
+// 括号里列着**两条及以上**引用的那一份是联合引证：`Cell.min = 26`（`js/render/board.js:15`、`js/theme.js:58`）
+// 就是这一形——两个名字按位置对着两条引用，绑哪一条都是假红（15 行坐着 `layoutFor`，58 行坐着 `Cell = { min: 26`，
+// 两句都真）。所以前挂只在括号里只有一条引用时才绑，这一条写明在这里而不是悄悄少测。
+const FLEET_BARE = /^:(\d+)(?:-(\d+))?$/;
+const CONN_GAP = /^[（(、，；：的在是〔【]+$/;
+const isCiteSpan = (b) => FLEET_CITE.test(b) || FLEET_BARE.test(b);
+const landMiss = (file, from, to) => (file ? citeMiss(file, from, to) : '前面没有一条带行号的引用可借');
+// 从这条引用的右边界扫到配对的 `）`：中间再出现一条反引号引用就是联合引证（返回 ≥2）。
+// 扫不到 `）`、或者要越过 200 个字符才扫到，一律当"绑不准"处理（返回 0），不参与比对。
+const groupCites = (text, endIdx) => {
+  const close = text.indexOf('）', endIdx);
+  if (close < 0 || close - endIdx > 200) return 0;
+  return 1 + [...text.slice(endIdx, close).matchAll(/`([^`\n]+)`/g)].filter((m) => isCiteSpan(m[1])).length;
+};
+const bareLand = [], bareNamed = [], spacedNamed = [];
+for (const [doc, text] of [['README.md', README], ['DESIGN.md', DESIGN]]) {
+  const body = text.split('\n').filter((l) => !/^\| K\d+ \| /.test(l)).join('\n');
+  const spans = [...body.matchAll(/`([^`\n]+)`/g)].map((m) => ({ b: m[1], s: m.index, e: m.index + m[0].length }));
+  let last = null;
+  for (let i = 0; i < spans.length; i++) {
+    const cf = spans[i].b.match(FLEET_CITE);
+    const cb = cf ? null : spans[i].b.match(FLEET_BARE);
+    if (!cf && !cb) continue;
+    const prv = spans[i - 1], nxt = spans[i + 1];
+    if (cf) {
+      last = resolve(cf[1]);
+      if (prv && !isCiteSpan(prv.b) && /\s/.test(prv.b)) {
+        const gap = body.slice(prv.e, spans[i].s);
+        if (gap.length <= 4 && !gap.includes('\n') && /^[（(]/.test(gap.replace(/\s+/g, '')) &&
+          groupCites(body, spans[i].e) === 1) {
+          const t = tokOf(prv.b);
+          if (t) spacedNamed.push([doc, last, +cf[2], +(cf[3] || cf[2]), t, prv.b]);
+        }
+      }
+      continue;
+    }
+    const from = +cb[1], to = +(cb[2] || cb[1]);
+    bareLand.push([doc, last, from, to]);
+    let t = '', raw = '';
+    if (nxt) {
+      const gap = body.slice(spans[i].e, nxt.s);
+      const g = gap.replace(/\s+/g, '');
+      if (gap.length <= 4 && !gap.includes('\n') && (/^[（(]/.test(g) || g === '的')) { t = tokOf(nxt.b); raw = nxt.b; }
+    }
+    if (!t && prv && !isCiteSpan(prv.b)) {
+      const gap = body.slice(prv.e, spans[i].s);
+      const g = gap.replace(/\s+/g, '');
+      const bracket = /^[（(]/.test(g);
+      if (gap.length <= 4 && !gap.includes('\n') && (CONN_GAP.test(g) || bracket) &&
+        (!bracket || groupCites(body, spans[i].e) === 1)) { t = tokOf(prv.b); raw = prv.b; }
+    }
+    if (t) bareNamed.push([doc, last, from, to, t, raw]);
+  }
+}
+const citeLabel = (file, from, to) => `${file || '∅'}:${from}${to !== from ? '-' + to : ''}`;
+const bareBad = bareLand.map(([doc, file, from, to]) => {
+  const why = landMiss(file, from, to);
+  return why ? `${doc} 的 \`:${from}${to !== from ? '-' + to : ''}\` → ${why}` : '';
+}).filter(Boolean);
+ok(bareLand.length >= 12, `D10j-a 文档里的裸续引解析到了一大堆（少于 12 条说明这一类引用改了写法，解析器在空转）`,
+  `${bareLand.length} 条 · 另有 ${cites.length} 条自带路径的由 D10 逐条开文件`);
+ok(bareBad.length === 0,
+  'D10j 每一条裸续引都借到同一份文档里前面最近那条带行号的引用，并和 D10 走同一个函数开回真行',
+  bareBad.length ? `漂了：${bareBad.join('，')}`
+    : `${bareLand.length} 条：${[...new Set(bareLand.map((b) => `${b[1]}·${citeLabel(b[1], b[2], b[3])}`))].join(' ')}`);
+const KNIFE_J = bareLand.length ? landMiss(bareLand[0][1], 999999, null) : '';
+ok(!!KNIFE_J, 'D10j-k 这一格自己带一把越界的刀：把上面第一条裸引的行号推到文件之外，必须报回越界（否则 D10j 是空跑）',
+  KNIFE_J || '推到 999999 行仍然"没毛病"——落点比对根本没跑');
+const bindMiss = ([doc, file, from, to, t, raw]) => {
+  const why = landMiss(file, from, to);
+  if (why) return `${doc} ${citeLabel(file, from, to)} 的 \`${raw}\` → ${why}`;
+  const win = (linesOf(file) || []).slice(from - 1, to).join('\n');
+  return hasWord(win, t) ? '' : `${doc} ${citeLabel(file, from, to)} 的 \`${raw}\` → 那几行里没有 ${t}（整词）`;
+};
+const bareBindBad = bareNamed.map(bindMiss).filter(Boolean);
+ok(bareNamed.length >= 2, 'D10k-a 裸续引身上挂着的名字解析到了（少于 2 处说明这一形改了写法，锚点这一类断言在空转）',
+  `${bareNamed.length} 处：${bareNamed.map((b) => `${b[4]}@${citeLabel(b[1], b[2], b[3])}`).join(' ') || '一处都没有'}`);
+ok(bareBindBad.length === 0, 'D10k 裸续引挂的那个名字也整词坐在借到的那几行里（`:NN` 的 `NAME`、`NAME` 在 `:NN` 两形都算）',
+  bareBindBad.length ? `认不出来：${bareBindBad.join('，')}` : `${bareNamed.length} 处逐个开回窗口比过`);
+const KNIFE_K = bareNamed.length ? bindMiss([bareNamed[0][0], bareNamed[0][1], bareNamed[0][2], bareNamed[0][3], 'zzNoSuchIdentifierzz', bareNamed[0][4]]) : '';
+ok(!!KNIFE_K, 'D10k-k 这一格自己带一把指错名字的刀：把第一条裸引锚点的名字换成仓里不存在的标识符，必须报回未命中',
+  KNIFE_K || '换成假名字之后仍然不红——整词比对根本没跑');
+const spacedBad = spacedNamed.map(bindMiss).filter(Boolean);
+ok(spacedNamed.length >= 3, 'D10l-a 名字里带空格的前挂指认解析到了（少于 3 处说明这一形改了写法，D10f 那道门槛外就没人了）',
+  `${spacedNamed.length} 处：${spacedNamed.map((b) => `${b[4]}@${citeLabel(b[1], b[2], b[3])}`).join(' ') || '一处都没有'}`);
+ok(spacedBad.length === 0, 'D10l 带空格的前挂指认（`X: "v"`（`path:NN`））也回读得到——D10f 拿"反引号里不含空格"放过的那一形',
+  spacedBad.length ? `认不出来：${spacedBad.join('，')}` : `${spacedNamed.length} 处逐个开回窗口比过（括号里多于一条引用的联合引证按上面写明的那条例矩不绑）`);
+const KNIFE_L = spacedNamed.length ? bindMiss([spacedNamed[0][0], spacedNamed[0][1], spacedNamed[0][2], spacedNamed[0][3], 'zzNoSuchIdentifierzz', spacedNamed[0][4]]) : '';
+ok(!!KNIFE_L, 'D10l-k 这一格自己带一把指错名字的刀：把第一条带空格的前挂名换成仓里不存在的标识符，必须报回未命中',
+  KNIFE_L || '换成假名字之后仍然不红——这一格的整词比对根本没跑');
+{
+  const quoted = [...DOCS.matchAll(/裸续引 (\d+) 条\s*（其中 (\d+) 处挂着名字）与带空格的前挂 (\d+) 处/g)]
+    .map((m) => [+m[1], +m[2], +m[3]]);
+  ok(quoted.length >= 1 && quoted.every(([a, b, c]) => a === bareLand.length && b === bareNamed.length && c === spacedNamed.length),
+    `D10m 文档抄的「裸续引 N 条（其中 M 处挂着名字）与前挂带空格 K 处」等于这一次真的解析到的（${bareLand.length}/${bareNamed.length}/${spacedNamed.length}）`,
+    quoted.length ? `文档 ${quoted.map(([a, b, c]) => `${a}/${b}/${c}`).join(' ')} vs 本轮 ${bareLand.length}/${bareNamed.length}/${spacedNamed.length}` : '解析不到那一句');
+}
+
 // ---- D11 表示层常数 + 「js/ 不读 tools/」那一类反向扫描 ------------------------------------
 ok(EMPTY === 0 && NO_CLUE === -1, `D11a 两个哨兵的现值：EMPTY ${EMPTY} / NO_CLUE ${NO_CLUE}（文档说"写 0 也能跑"的两个数）`,
   `代码 ${EMPTY}/${NO_CLUE}`);
@@ -886,7 +999,7 @@ ok(!/D\d+[^\d]{0,4}ms|断言\s*D\d+/.test(README), 'D13b 文档没有把任何 D
 // 这一节是全闸的「反空转」兜底：前面任何一个组整段被删，emitted 就少一格、rows 就对不上钉的
 // EXPECT_ROWS —— 两种删法（改代码 / 改文档）都会红。D14c/D14d 故意排在两条 ok 之后，
 // 那时 D14 自己也已经进了 emitted。
-const EXPECT_ROWS = 281;
+const EXPECT_ROWS = 291;
 const GROUPS_TOTAL = 14;
 const groupClaims = [...DOCS.matchAll(/D1[–-]D?(\d+)/g)].map((m) => +m[1]);
 ok(groupClaims.length >= 1 && groupClaims.every((v) => v === GROUPS_TOTAL),

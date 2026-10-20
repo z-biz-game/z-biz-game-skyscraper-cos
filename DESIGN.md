@@ -45,7 +45,7 @@
 | `tools/balance.mjs` | 现场抽题量阶梯，两道人审 | 读任何写死的表（`tools/balance.mjs:1-3`） |
 | `tools/bake.mjs` | 写 `levels.js`，并用 `--check` 把每个印出的数字重算回去 | 墙钟时间 |
 | `tools/verify.sh` `tools/playtest.cjs` `tools/scenarios.js` | 真 Chrome + CDP：DOM 几何、画布像素、真 localStorage，两种 URL 形态各一遍 | 内部标志位（断言只读 DOM/像素/存档） |
-| `tools/doctest.mjs` | 文档数字闸：README/DESIGN 印出的每一个现值都从引擎当场重算再对，分 D1–D14 十四组，全跑 281 条断言 | 抄文档里的数（它只认自己重算出来的那一版） |
+| `tools/doctest.mjs` | 文档数字闸：README/DESIGN 印出的每一个现值都从引擎当场重算再对，分 D1–D14 十四组，全跑 291 条断言 | 抄文档里的数（它只认自己重算出来的那一版） |
 | `tools/sabotage.mjs` | 破坏台账：把每一类谎各写回树里一遍，要求 `tools/doctest.mjs` **点名**变红，再从内存里那份字节恢复 | 用 git 恢复（本工作区禁用那几条命令，见 §7 最后一行） |
 
 一个刻意的事实：`countNaive` **只在 `tools/` 和页内测试场景里被调用**；`countSolutions` 在 `js/` 里只有一个调用点，
@@ -204,13 +204,17 @@
 
 | 闸 | 命令 | 它到底在拦什么 |
 | --- | --- | --- |
-| 语法 | `npm run check`（`package.json:15`） | 每个 `js/**`、`server.cjs`、两个 `electron/*.cjs`、`tools/*.mjs`、`tools/scenarios.js` 能被解析。**注意**：`tools/scenarios.js` 是被 `node --check` 而不是被喂给 node 跑（`check` 脚本里那句"未落地，跳过"是留给还没写的场景文件的） |
+| 语法 | `npm run check`（`package.json:17`） | 每个 `js/**`、`server.cjs`、两个 `electron/*.cjs`、`tools/*.mjs`、`tools/scenarios.js` 能被解析。**注意**：`tools/scenarios.js` 是被 `node --check` 而不是被喂给 node 跑（`check` 脚本里那句"未落地，跳过"是留给还没写的场景文件的） |
 | 引擎保证 | `node tools/engine-test.mjs` | 1976 条断言 / 9 节（`11881a5` 前 1879）；期望值是**纸上演算写死的字面量**，绝不从求解器读回来（`tools/engine-test.mjs:1-15`） |
-| 阶梯 | `node tools/balance.mjs` | 入带率 + 中位数严格递增 + 线索轴生效 + Stirling 行 + 每样本三套实现对拍，**外加逐题的穷举举证账**：`handed ≥ 1 && proved ≥ 1`、`交给它 = 证完 + 四类拒绝`、`maxNodes < proof.budget` 压线即红（`tools/balance.mjs:133-137`）。CI 口径是 `SAMPLES: "12"`（`.github/workflows/ci.yml:43`），文档口径是 24 |
+| 阶梯 | `node tools/balance.mjs` | 入带率 + 中位数严格递增 + 线索轴生效 + Stirling 行 + 每样本三套实现对拍，**外加逐题的穷举举证账**：`handed ≥ 1 && proved ≥ 1`、`交给它 = 证完 + 四类拒绝`、`maxNodes < proof.budget` 压线即红（`tools/balance.mjs:133-137`）。CI 口径是 `SAMPLES: "12"`（`.github/workflows/ci.yml:37`），文档口径是 24 |
 | 出厂重算 | `node tools/bake.mjs --check` | §6 的语义 + 逐字节两件事 |
 | 文档数字 | `node tools/doctest.mjs` | README/DESIGN 印出去的每一个现值：阶梯表、入带率与中位链、拒绝统计、穷举台账、墙探针、出厂 20 关的三票、规则开火普查、`>>>FIXTURE` 夹具表、端口与 `SAMPLES` 口径、`file:NN` 引用（145 条范围 + 57 条锚点）——范围这一格本轮加严一道：被指的那几行整段是空白也算红；
 现推锚点那一格同轮换成**整词**口径（名字两侧再是字母/数字/`_`/`$` 就不算它本身，`Rule` 坐在写着 `Rules` 的行上
-不算命中），并自带一把从现推锚点里截前缀的对照刀，口径退回子串的那一天那条断言为它红、同一份文档再现推锚点 12 条（其中手抄表没钉的 3 条由这一格自己数）、`DESIGN.md §N` 的"几处"那句自己、D1–D14 十四组与 `EXPECT_ROWS` 自钉。它**不重测墙钟**，也不抄文档的数：全部当场重算 |
+不算命中），并自带一把从现推锚点里截前缀的对照刀，口径退回子串的那一天那条断言为它红、同一份文档再现推锚点 12 条（其中手抄表没钉的 3 条由这一格自己数）、`DESIGN.md §N` 的"几处"那句自己、D1–D14 十四组与 `EXPECT_ROWS` 自钉。
+同一轮把两条漏口收进来：省掉文件名的续引借同一份文档里前面最近那条**带行号**的引用一起开文件（游标不被只提文件名的提及推动），
+名字里带空格的前挂指认也回读得到（括号里多于一条引用的联合引证不绑，理由写在闸的注释里）——本轮解析到的是裸续引 25 条
+（其中 3 处挂着名字）与带空格的前挂 5 处，三个数由 D10m 与这句话对账，抓出的真漂是 README/DESIGN 把 CI 的 `SAMPLES` 指到了
+`- name: Entry files exist` 那一行，两处都已改回声明那一行。它**不重测墙钟**，也不抄文档的数：全部当场重算 |
 | 破坏台账 | `node tools/sabotage.mjs` | 全绿不等于闸会红。7 把刀逐把把一类谎写回树里（`TIERS` 带、出厂关卡的线索串、README 那句"1976 条"、`verify.sh` 的 want 端口、`js/` 反向 import `tools/` 那一类缺席检查、`scenarios.js` 夹具字段、把一句 `file:NN` 引用的起始行挪两行），每把都要求 doctest `rc≠0` **且**点名它杀的那条断言，FAIL 行原文留在日志里；恢复用的是下刀前读进内存的那份字节（不是 `git checkout`/`restore`——本工作区禁用），盖回台账的 rc 是真读回来的。刀数由 `D14g` 与文档对账（这一句写 7 把，台账就得真有 7 把） |
 | 浏览器 | `bash tools/verify.sh` | 真 Chrome：DOM 几何、画布像素、真 localStorage。**两种形态各 8 场景 = 507 条**（`tools/verify.sh:33` 的注册表）。前四道 Node 闸从建仓起就在 CI 里跑，这一条不是——`browser` 作业是 `5c59352` 才加的，同一 SHA 的 runner 日志里两个步骤各自 `success`。表中后两道（文档数字、破坏台账）与 `bash tools/verify.sh` 里的那两条逻辑闸是同一条命令，CI 没有只属于自己的门 |
 
