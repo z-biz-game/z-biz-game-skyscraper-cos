@@ -45,7 +45,7 @@
 | `tools/balance.mjs` | 现场抽题量阶梯，两道人审 | 读任何写死的表（`tools/balance.mjs:1-3`） |
 | `tools/bake.mjs` | 写 `levels.js`，并用 `--check` 把每个印出的数字重算回去 | 墙钟时间 |
 | `tools/verify.sh` `tools/playtest.cjs` `tools/scenarios.js` | 真 Chrome + CDP：DOM 几何、画布像素、真 localStorage，两种 URL 形态各一遍 | 内部标志位（断言只读 DOM/像素/存档） |
-| `tools/doctest.mjs` | 文档数字闸：README/DESIGN 印出的每一个现值都从引擎当场重算再对，分 D1–D14 十四组，全跑 291 条断言 | 抄文档里的数（它只认自己重算出来的那一版） |
+| `tools/doctest.mjs` | 文档数字闸：README/DESIGN 印出的每一个现值都从引擎当场重算再对，分 D1–D14 十四组，全跑 292 条断言 | 抄文档里的数（它只认自己重算出来的那一版） |
 | `tools/sabotage.mjs` | 破坏台账：把每一类谎各写回树里一遍，要求 `tools/doctest.mjs` **点名**变红，再从内存里那份字节恢复 | 用 git 恢复（本工作区禁用那几条命令，见 §7 最后一行） |
 
 一个刻意的事实：`countNaive` **只在 `tools/` 和页内测试场景里被调用**；`countSolutions` 在 `js/` 里只有一个调用点，
@@ -68,7 +68,7 @@
 其他表示层事实（都是本轮实测）：一条线两端的读数加起来 `> n+1` 在**构造阶段**抛错（`js/engine/skyscraper.js:99`）；
 线索串格式是 `4n` 个字符、`.` 表示空边，`bake.mjs` 里有一份**故意不与 `library.js` 共享**的编解码器
 （`tools/bake.mjs:65-78` vs `js/library.js:19-35`）——两份解码不一致的表现为 `--check` 变红
-（`m.clueRoundTrip`，`tools/bake.mjs:179`）。
+（`m.clueRoundTrip`，`tools/bake.mjs:206`）。
 
 ## §3 三套（页内四套）互不信任的实现
 
@@ -188,7 +188,7 @@
 
 1. **语义**：每张盘从 `clue` 串重建盘 → 跑铅笔路径 → 跑 `countSolutions` → 跑 `countNaive`，
    与印在文件里的 `score / steps / places / prunes / eliminated / rounds / clues / depth / solution / topRule`
-   **逐字段**比（`measure()` 与 `verifyRow()`，`tools/bake.mjs:154`、`:183`），还要反过来用答案串把 `4n` 条边
+   **逐字段**比（`measure()` 与 `verifyRow()`，`tools/bake.mjs:181`、`:210`），还要反过来用答案串把 `4n` 条边
    重数一遍对得上印出来的线索（`tools/bake.mjs:196-203`）。
 2. **文本**：内存里重生成整个文件，要求与磁盘上那份**逐字节相同**（`tools/bake.mjs:374-375`）。
 

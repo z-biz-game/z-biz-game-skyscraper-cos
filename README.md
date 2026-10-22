@@ -195,7 +195,7 @@ npm run check                        # → OK
 node tools/engine-test.mjs           # → 断言 1976 · 通过 1976 · 失败 0 · 章节 9 节（含规则开火普查）
 node tools/bake.mjs --check          # → 20 关，每个印出的数字都从线索串重算
 SAMPLES=24 node tools/balance.mjs    # → == 结论 ：门禁全过 ==（含穷举举证台账）
-node tools/doctest.mjs               # → rows: 291 fail: 0（文档数字闸，D1–D14）
+node tools/doctest.mjs               # → rows: 292 fail: 0（文档数字闸，D1–D14）
 node tools/sabotage.mjs              # → ledger: PASS（破坏台账：每把刀都必须把上面那道闸弄红并点名）
 bash tools/verify.sh                 # → === ALL GREEN（两种 URL 形态的全部场景）===，里面含上面两道闸
 ```
@@ -211,8 +211,8 @@ bash tools/verify.sh                 # → === ALL GREEN（两种 URL 形态的�
 本页与 `DESIGN.md` 印出去的每一个现值都由 `tools/doctest.mjs` 当场重算再对：出厂 20 关从 `clue` 串重解、
 再交给两个独立穷举器判一遍（**不读 `js/data/levels.js` 里记着的答案**——生成器自己记的数在剪线索之后就不作数了）；
 每档 24 题按 `balance-<档>-<k>` 那批种子重造；规则开火普查、`>>>FIXTURE` 夹具表、端口与 `SAMPLES` 口径、
-`file:NN` 引用与锚点表、阶梯表与中位链都在里面。它分 D1–D14 十四组、全跑 291 条断言（脚本尾部打
-`rows: 291 fail: 0`，文件里 `EXPECT_ROWS` 钉的是 291），tools/verify.sh 里钉的 doctest 断言数是 291 ——
+`file:NN` 引用与锚点表、阶梯表与中位链都在里面。它分 D1–D14 十四组、全跑 292 条断言（脚本尾部打
+`rows: 292 fail: 0`，文件里 `EXPECT_ROWS` 钉的是 292），tools/verify.sh 里钉的 doctest 断言数是 292 ——
 整段检查被删掉时条数对不上就红，不会留下一声"绿"。
 
 `file:NN` 引用有两条腿。一条核**手抄的锚点表**（表的条数由 `DESIGN.md` 那张闸表那一格钉着，与本次解析到的条数对账）：逐条要求那个标识符真坐在被指的那一行上。
@@ -325,3 +325,12 @@ X13 内联位图谎报尺寸——只在有靶子时下：X11/X12 要页面上�
 把 ci.yml 里那行 `run: node tools/deploy-set.mjs` 砍掉，本仓整闸必须点名红且退出码非 0。
 所以「本地全绿、线上 404 自己的 manifest / sw.js / 图标」这一类坏法在本地就会红。
 
+
+## 本轮补的一格：逗号式那一形不再只过范围检查
+
+`DESIGN.md` §8 那句把两个提交路径函数引到了键盘选格那段代码，`D10n` 这一格上线第一跑就点出了两处这种"行号在界内、名字根本不在那几行"的写法
+（都在 `tools/bake.mjs` 的引用上：一处差 27 行、一处把两个函数配到了另外两段代码）。
+这一格与现推锚点那一格有意不同：名字取点号尾巴（`surface.tap` 那一行写的是 `tap`），逗号后面那串简写续引
+算进同一次指认、名字落在其中任一段就算过（"两个名字配两个行号"这种散文谁配谁腿读不出来，所以这一格比精确配对比松、
+比完全不查紧）；引用后面紧跟「 的 `X`」的那些不算它的账——那条引用已经绑给 X 了，前面那个名字只是行文提及。
+本轮 8 处全过，`rows` 从 291 到 292（`EXPECT_ROWS`、`tools/verify.sh` 与文档抄的那几处一起改口）。
