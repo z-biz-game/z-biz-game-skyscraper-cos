@@ -800,8 +800,10 @@ ok(derived.length >= 12 && beyondTable.length >= 2,
     for (const m of text.matchAll(/`([^`\n]+)`[，、]`((?:[\w./-]+\.(?:js|mjs|cjs|sh|json|html|yml|css)):(\d+)(?:-(\d+))?)`/g)) {
       const tok = (tokOf(m[1]) || '').split('.').pop();
       if (!tok) continue;
-      if (/^[ \t]*的[ \t]*`/.test(text.slice(m.index + m[0].length, m.index + m[0].length + 30))) continue;
-      n++;
+      const ahead = text.slice(m.index + m[0].length, m.index + m[0].length + 40);
+      if (/^[ \t]*的[ \t]*`/.test(ahead)) continue;
+      // ④ 名字已经挂在句中更早的那条引用上（`` `path:NN` 的 `A`、`path:MM` ``）：逗号在这里是列表分隔。
+      if (/`[\w./@+-]+:[\d,-]+`\s*的[ \t]*$/.test(text.slice(Math.max(0, m.index - 34), m.index))) continue;
       const wins = [[+m[3], +(m[4] || m[3])]];
       let tail = text.slice(m.index + m[0].length);
       for (;;) {
@@ -816,7 +818,19 @@ ok(derived.length >= 12 && beyondTable.length >= 2,
         return src.slice(Math.max(0, from - 1), to + 2).join('\n')
           .split(/[^A-Za-z0-9_$]+/).some((w) => w === tok);
       });
-      if (!hit) bad.push(`${tok}，${m[2]}（这几行里${wins.length > 1 ? `一个都没有：` : ''}${wins.map(([a, b]) => `${a}${b !== a ? '-' + b : ''}`).join('/')}）`);
+      // ⑤ 引用后面用别的动词自带了它的名字（`` `path` import `X` ``、`` `path`（`X`） ``）——
+      // 判据是内容不是形状：后面那个 span 的尾巴真落在该引用（含续引）的某一段里，这条引用就不是本句的账。
+      // 与 ferry 的 D13n 同尺（`057d2fe`）：两把尺必须是同一把，否则一台放过一台红就成了"每台自己一套"。
+      const nxt = /^[ \t]*(?:的|import|（|\()[ \t]*`([^`\n]+)`/.exec(ahead);
+      const nxtTok = nxt ? nxt[1].split('(')[0].trim().split('.').pop() : '';
+      const selfNamed = !!nxtTok && wins.some(([from, to]) => {
+        const src = linesOf(m[2].replace(/:\d+(?:-\d+)?$/, ''));
+        return !!src && src.slice(Math.max(0, from - 1), to + 2).join('\n')
+          .split(/[^A-Za-z0-9_$]+/).some((w) => w === nxtTok);
+      });
+      if (selfNamed) continue;
+      n++;
+      if (!hit) bad.push(`${tok}，${m[2]}（这几行里一个都没有：${wins.map(([a, b]) => `${a}${b !== a ? '-' + b : ''}`).join('/')}）`);
     }
     return { bad, n };
   };
