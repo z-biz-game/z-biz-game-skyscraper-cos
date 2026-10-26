@@ -45,7 +45,7 @@
 | `tools/balance.mjs` | 现场抽题量阶梯，两道人审 | 读任何写死的表（`tools/balance.mjs:1-3`） |
 | `tools/bake.mjs` | 写 `levels.js`，并用 `--check` 把每个印出的数字重算回去 | 墙钟时间 |
 | `tools/verify.sh` `tools/playtest.cjs` `tools/scenarios.js` | 真 Chrome + CDP：DOM 几何、画布像素、真 localStorage，两种 URL 形态各一遍 | 内部标志位（断言只读 DOM/像素/存档） |
-| `tools/doctest.mjs` | 文档数字闸：README/DESIGN 印出的每一个现值都从引擎当场重算再对，分 D1–D14 十四组，全跑 291 条断言 | 抄文档里的数（它只认自己重算出来的那一版） |
+| `tools/doctest.mjs` | 文档数字闸：README/DESIGN 印出的每一个现值都从引擎当场重算再对，分 D1–D14 十四组，全跑 292 条断言 | 抄文档里的数（它只认自己重算出来的那一版） |
 | `tools/sabotage.mjs` | 破坏台账：把每一类谎各写回树里一遍，要求 `tools/doctest.mjs` **点名**变红，再从内存里那份字节恢复 | 用 git 恢复（本工作区禁用那几条命令，见 §7 最后一行） |
 
 一个刻意的事实：`countNaive` **只在 `tools/` 和页内测试场景里被调用**；`countSolutions` 在 `js/` 里只有一个调用点，
@@ -68,7 +68,7 @@
 其他表示层事实（都是本轮实测）：一条线两端的读数加起来 `> n+1` 在**构造阶段**抛错（`js/engine/skyscraper.js:99`）；
 线索串格式是 `4n` 个字符、`.` 表示空边，`bake.mjs` 里有一份**故意不与 `library.js` 共享**的编解码器
 （`tools/bake.mjs:65-78` vs `js/library.js:19-35`）——两份解码不一致的表现为 `--check` 变红
-（`m.clueRoundTrip`，`tools/bake.mjs:179`）。
+（`m.clueRoundTrip`，`tools/bake.mjs:206`）。
 
 ## §3 三套（页内四套）互不信任的实现
 
@@ -103,7 +103,7 @@
 
 ## §4 铅笔路径：规则表、实测深度，和两条从不显形的 Hall 规则
 
-`solve()` 每轮扫全部 `2n` 条线（`propagate`，`js/engine/skyscraper.js:392`），顺序是"人伸手会先摸什么"：
+`solve()` 每轮扫全部 `2n` 条线（`js/engine/skyscraper.js:392` 的 `propagate`），顺序是"人伸手会先摸什么"：
 
 1. 单边自解释：`只见一栋`（层 1）/ `一栋不落`（层 1）/ `第一格的顶`（层 2，权重 0.6）—— 权重与层级写在 `js/engine/skyscraper.js:149-169`。
 2. 两头一起读：`最高楼的位置`、`最高楼只有一格可站`（都是层 2，`:170-183`）。
@@ -188,7 +188,7 @@
 
 1. **语义**：每张盘从 `clue` 串重建盘 → 跑铅笔路径 → 跑 `countSolutions` → 跑 `countNaive`，
    与印在文件里的 `score / steps / places / prunes / eliminated / rounds / clues / depth / solution / topRule`
-   **逐字段**比（`measure()` 与 `verifyRow()`，`tools/bake.mjs:154`、`:183`），还要反过来用答案串把 `4n` 条边
+   **逐字段**比（`measure()` 与 `verifyRow()`，`tools/bake.mjs:181`、`:210`），还要反过来用答案串把 `4n` 条边
    重数一遍对得上印出来的线索（`tools/bake.mjs:196-203`）。
 2. **文本**：内存里重生成整个文件，要求与磁盘上那份**逐字节相同**（`tools/bake.mjs:374-375`）。
 
@@ -208,9 +208,9 @@
 | 引擎保证 | `node tools/engine-test.mjs` | 1976 条断言 / 9 节（`11881a5` 前 1879）；期望值是**纸上演算写死的字面量**，绝不从求解器读回来（`tools/engine-test.mjs:1-15`） |
 | 阶梯 | `node tools/balance.mjs` | 入带率 + 中位数严格递增 + 线索轴生效 + Stirling 行 + 每样本三套实现对拍，**外加逐题的穷举举证账**：`handed ≥ 1 && proved ≥ 1`、`交给它 = 证完 + 四类拒绝`、`maxNodes < proof.budget` 压线即红（`tools/balance.mjs:133-137`）。CI 口径是 `SAMPLES: "12"`（`.github/workflows/ci.yml:37`），文档口径是 24 |
 | 出厂重算 | `node tools/bake.mjs --check` | §6 的语义 + 逐字节两件事 |
-| 文档数字 | `node tools/doctest.mjs` | README/DESIGN 印出去的每一个现值：阶梯表、入带率与中位链、拒绝统计、穷举台账、墙探针、出厂 20 关的三票、规则开火普查、`>>>FIXTURE` 夹具表、端口与 `SAMPLES` 口径、`file:NN` 引用（145 条范围 + 57 条锚点）——范围这一格本轮加严一道：被指的那几行整段是空白也算红；
+| 文档数字 | `node tools/doctest.mjs` | README/DESIGN 印出去的每一个现值：阶梯表、入带率与中位链、拒绝统计、穷举台账、墙探针、出厂 20 关的三票、规则开火普查、`>>>FIXTURE` 夹具表、端口与 `SAMPLES` 口径、`file:NN` 引用（149 条范围 + 57 条锚点）——范围这一格本轮加严一道：被指的那几行整段是空白也算红；
 现推锚点那一格同轮换成**整词**口径（名字两侧再是字母/数字/`_`/`$` 就不算它本身，`Rule` 坐在写着 `Rules` 的行上
-不算命中），并自带一把从现推锚点里截前缀的对照刀，口径退回子串的那一天那条断言为它红、同一份文档再现推锚点 12 条（其中手抄表没钉的 3 条由这一格自己数）、`DESIGN.md §N` 的"几处"那句自己、D1–D14 十四组与 `EXPECT_ROWS` 自钉。
+不算命中），并自带一把从现推锚点里截前缀的对照刀，口径退回子串的那一天那条断言为它红、同一份文档再现推锚点 16 条（其中手抄表没钉的 6 条由这一格自己数）、`DESIGN.md §N` 的"几处"那句自己、D1–D14 十四组与 `EXPECT_ROWS` 自钉。
 同一轮把两条漏口收进来：省掉文件名的续引借同一份文档里前面最近那条**带行号**的引用一起开文件（游标不被只提文件名的提及推动），
 名字里带空格的前挂指认也回读得到（括号里多于一条引用的联合引证不绑，理由写在闸的注释里）——本轮解析到的是裸续引 25 条
 （其中 3 处挂着名字）与带空格的前挂 5 处，三个数由 D10m 与这句话对账，抓出的真漂是 README/DESIGN 把 CI 的 `SAMPLES` 指到了
@@ -237,7 +237,7 @@ play 49 + conflict 37 + hint 198 + stats 45 = 507 条`，0 失败。
 ## §8 确定性：墙钟时间不进任何选择键
 
 一个盘 = `(seed, tier)`，别的什么都不是。存档因此只需要 `(seed, tier)` 加玩家的墨
-（`Store.saveResume`，`js/store.js:234-255`；注释在 `js/store.js:1-4`），日课、浏览器、bake、验证台
+（`js/store.js:234-255` 的 `saveResume`；注释在 `js/store.js:1-4`），日课、浏览器、bake、验证台
 拿到的是**同一个盘**。
 
 这条纪律在代码里的落点（都可 grep）：
@@ -263,7 +263,7 @@ play 49 + conflict 37 + hint 198 + stats 45 = 507 条`，0 失败。
 在当前出货路径上**没有被任何模块 import**（只用了 `dateSeed`）。
 
 `window.skyscraper` 与 `window.App` 是同一个对象的两个名字（`js/main.js:969-970`），
-验证台走的是玩家那套提交路径（`surface.tap` / `surface.stroke`，`js/main.js:861-869`），
+验证台走的是玩家那套提交路径（`js/main.js:910` 的 `tap` / `js/main.js:914` 的 `stroke`，两者都挂在 `surface` 上），
 所以场景绿了等于真状态机绿了。
 
 ## §9 成本表

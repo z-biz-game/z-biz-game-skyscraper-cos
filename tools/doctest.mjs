@@ -783,6 +783,65 @@ ok(derived.length >= 12 && beyondTable.length >= 2,
     `闸数到 ${beyondTable.length} · 文档写了 ${outClaims.length} 处：${[...new Set(outClaims)].join('/') || '一处都没写'}`);
 }
 
+// ---- D10n 逗号式：这一形在本腿不挂锚点，可它引的那几行也不能是隔壁那段代码 ------------------------
+// `` `NAME`，`file:NN` `` 的间隔是纯标点，D10f 现推锚点时不认它，于是它只过范围检查。
+// 这一格不是假设漏口：本轮就是人读才看见 `DESIGN.md` §8 那句「`surface.tap` / `surface.stroke`，
+// `js/main.js:861-869`」指的九行其实是键盘 `moveSelection`，两个方法真身在 :910 与 :914——
+// 1089 行的文件里 861 当然"不越界"，两道查一路绿。这里把它变成点名。
+// 口径与 D10f 有意不同处：① 名字取点号尾巴（`surface.tap` 那一行写的是 `tap`）；
+// ② 逗号后面那串 `` 、`:NN` `` 续引算进同一次指认，名字落在**其中任一段**就算过（散文里是"两个名字配两个行号"，
+// 谁配谁这条腿读不出来，所以这一格只要求"在这组行号里某处"，比精确配对比松、比完全不查紧）；
+// ③ 引用后面紧跟「 的 `X`」时这条引用是绑给 X 的，前面那个名字只是行文提及，不算这一格的账。
+{
+  const CITE_TAIL = /^(?:、|，)\s*`(?:[\w./-]+\.(?:js|mjs|cjs|sh|json|html|yml|css))?:([0-9]+)(?:-([0-9]+))?`/;
+  const commaMiss = (text) => {
+    const bad = [];
+    let n = 0;
+    for (const m of text.matchAll(/`([^`\n]+)`[，、]`((?:[\w./-]+\.(?:js|mjs|cjs|sh|json|html|yml|css)):(\d+)(?:-(\d+))?)`/g)) {
+      const tok = (tokOf(m[1]) || '').split('.').pop();
+      if (!tok) continue;
+      const ahead = text.slice(m.index + m[0].length, m.index + m[0].length + 40);
+      if (/^[ \t]*的[ \t]*`/.test(ahead)) continue;
+      // ④ 名字已经挂在句中更早的那条引用上（`` `path:NN` 的 `A`、`path:MM` ``）：逗号在这里是列表分隔。
+      if (/`[\w./@+-]+:[\d,-]+`\s*的[ \t]*$/.test(text.slice(Math.max(0, m.index - 34), m.index))) continue;
+      const wins = [[+m[3], +(m[4] || m[3])]];
+      let tail = text.slice(m.index + m[0].length);
+      for (;;) {
+        const c = CITE_TAIL.exec(tail);
+        if (!c) break;
+        wins.push([+c[1], +(c[2] || c[1])]);
+        tail = tail.slice(c[0].length);
+      }
+      const hit = wins.some(([from, to]) => {
+        const src = linesOf(m[2].replace(/:\d+(?:-\d+)?$/, ''));
+        if (!src) return false;
+        return src.slice(Math.max(0, from - 1), to + 2).join('\n')
+          .split(/[^A-Za-z0-9_$]+/).some((w) => w === tok);
+      });
+      // ⑤ 引用后面用别的动词自带了它的名字（`` `path` import `X` ``、`` `path`（`X`） ``）——
+      // 判据是内容不是形状：后面那个 span 的尾巴真落在该引用（含续引）的某一段里，这条引用就不是本句的账。
+      // 与 ferry 的 D13n 同尺（`057d2fe`）：两把尺必须是同一把，否则一台放过一台红就成了"每台自己一套"。
+      const nxt = /^[ \t]*(?:的|import|（|\()[ \t]*`([^`\n]+)`/.exec(ahead);
+      const nxtTok = nxt ? nxt[1].split('(')[0].trim().split('.').pop() : '';
+      const selfNamed = !!nxtTok && wins.some(([from, to]) => {
+        const src = linesOf(m[2].replace(/:\d+(?:-\d+)?$/, ''));
+        return !!src && src.slice(Math.max(0, from - 1), to + 2).join('\n')
+          .split(/[^A-Za-z0-9_$]+/).some((w) => w === nxtTok);
+      });
+      if (selfNamed) continue;
+      n++;
+      if (!hit) bad.push(`${tok}，${m[2]}（这几行里一个都没有：${wins.map(([a, b]) => `${a}${b !== a ? '-' + b : ''}`).join('/')}）`);
+    }
+    return { bad, n };
+  };
+  const here = commaMiss(DOCS);
+  const knife = commaMiss('举例：`EXPECT_ROWS_NOT_HERE`，`js/engine/skyscraper.js:26`');
+  ok(here.bad.length === 0 && knife.bad.length === 1 && here.n >= 1,
+    `D10n 逗号式引用（腿不挂锚点那一形）里那个名字得落在它自己那组行号中的一处（本轮 ${here.n} 处）；这一格自带一把指错行的刀`,
+    here.bad.length ? `漂 ${here.bad.length} 处：${here.bad.slice(0, 3).join(' | ')}`
+      : (knife.bad.length === 1 ? `刀红在：${knife.bad[0]}` : '刀没红：这一格是摆设')
+        + ` · 真文档 ${here.n} 处全过` + (here.n >= 1 ? '' : '（一处都没有：文法被改了，这一格在空转）'));}
+
 // ---- D10j–l 裸续引要开得到文件，带空格的前挂名要回读得到 ------------------------------------
 // D10 的正则要求每条引用**自带路径**，D10f 现推锚点时又只认反引号里那条 `path:NN`——于是两份文档里
 // 那二十几条省掉文件名的 `:540`、`:184-204` 一次都没被开过文件：往 `js/engine/skyscraper.js` 插一行，
@@ -999,7 +1058,7 @@ ok(!/D\d+[^\d]{0,4}ms|断言\s*D\d+/.test(README), 'D13b 文档没有把任何 D
 // 这一节是全闸的「反空转」兜底：前面任何一个组整段被删，emitted 就少一格、rows 就对不上钉的
 // EXPECT_ROWS —— 两种删法（改代码 / 改文档）都会红。D14c/D14d 故意排在两条 ok 之后，
 // 那时 D14 自己也已经进了 emitted。
-const EXPECT_ROWS = 291;
+const EXPECT_ROWS = 292
 const GROUPS_TOTAL = 14;
 const groupClaims = [...DOCS.matchAll(/D1[–-]D?(\d+)/g)].map((m) => +m[1]);
 ok(groupClaims.length >= 1 && groupClaims.every((v) => v === GROUPS_TOTAL),
