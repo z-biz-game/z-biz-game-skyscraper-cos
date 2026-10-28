@@ -40,7 +40,7 @@
 | `js/ui/game.js` | 可玩状态机：一次手势 = 一步撤销、`hint()` 走的是**线索**推出来的脚本、胜利判定用 `verify()` | 自己写一句提示文案（见 §4） |
 | `js/render/board.js` | Canvas 绘制 + 命中几何（`layoutFor`），与 `hitCell` 共用同一份布局 | 任何判断（"这条边对上了"来自引擎） |
 | `js/theme.js` `js/audio/synth.js` | 色板/间距/动效/触控下限的单一来源；WebAudio 合成音效 | 硬编码副本（CSS 通过 `--touch-min` 拿同一个数） |
-| `js/main.js` | 接线 + `window.skyscraper` / `window.App` 双面（`js/main.js:969-970`） | 判定（注释在 `js/main.js:1-4` 就划了这条线） |
+| `js/main.js` | 接线 + `window.skyscraper` / `window.App` 双面（`js/main.js:1280-1283`） | 判定（注释在 `js/main.js:1-4` 就划了这条线） |
 | `tools/engine-test.mjs` | 1976 条断言、9 节，纯 Node | 浏览器 |
 | `tools/balance.mjs` | 现场抽题量阶梯，两道人审 | 读任何写死的表（`tools/balance.mjs:1-3`） |
 | `tools/bake.mjs` | 写 `levels.js`，并用 `--check` 把每个印出的数字重算回去 | 墙钟时间 |
@@ -131,8 +131,8 @@
   stall without them"，本轮这个因果不复现。Hall 在数学上确实严格强于逐格支持检查，但在**这条阶梯产生的盘上它没有活可干**。
   这一轮只写文档，代码没动。
 - 同一条不一致会漏到玩家脸上：出厂章节标题 `六阶的 Hall 家族` 与大师档的文案
-  "几格候选挤在同样几格里，Hall 家族才解得开"（`tools/bake.mjs:95`、`js/main.js:564`）承诺 Hall 是大师档的钥匙，
-  而**同一个菜单**的规则表会打印"这条规则在这 20 关里开火 0 次（沉默）"（`js/main.js:587`、`:592-593`）。
+  "几格候选挤在同样几格里，Hall 家族才解得开"（`tools/bake.mjs:95`、`js/main.js:796`）承诺 Hall 是大师档的钥匙，
+  而**同一个菜单**的规则表会打印"这条规则在这 20 关里开火 0 次（沉默）"（`js/main.js:857-859`、`:863-865`）。
   本轮实测：4 张出厂 master 关的深度都是 3。
 
 提示的可证性：提示**不写文案**，它把规则自己的句子原样搬出来（`report()` → `row.rule.text(board, row)`，
@@ -208,7 +208,7 @@
 | 引擎保证 | `node tools/engine-test.mjs` | 1976 条断言 / 9 节（`11881a5` 前 1879）；期望值是**纸上演算写死的字面量**，绝不从求解器读回来（`tools/engine-test.mjs:1-15`） |
 | 阶梯 | `node tools/balance.mjs` | 入带率 + 中位数严格递增 + 线索轴生效 + Stirling 行 + 每样本三套实现对拍，**外加逐题的穷举举证账**：`handed ≥ 1 && proved ≥ 1`、`交给它 = 证完 + 四类拒绝`、`maxNodes < proof.budget` 压线即红（`tools/balance.mjs:133-137`）。CI 口径是 `SAMPLES: "12"`（`.github/workflows/ci.yml:37`），文档口径是 24 |
 | 出厂重算 | `node tools/bake.mjs --check` | §6 的语义 + 逐字节两件事 |
-| 文档数字 | `node tools/doctest.mjs` | README/DESIGN 印出去的每一个现值：阶梯表、入带率与中位链、拒绝统计、穷举台账、墙探针、出厂 20 关的三票、规则开火普查、`>>>FIXTURE` 夹具表、端口与 `SAMPLES` 口径、`file:NN` 引用（149 条范围 + 57 条锚点）——范围这一格本轮加严一道：被指的那几行整段是空白也算红；
+| 文档数字 | `node tools/doctest.mjs` | README/DESIGN 印出去的每一个现值：阶梯表、入带率与中位链、拒绝统计、穷举台账、墙探针、出厂 20 关的三票、规则开火普查、`>>>FIXTURE` 夹具表、端口与 `SAMPLES` 口径、`file:NN` 引用（150 条范围 + 57 条锚点）——范围这一格本轮加严一道：被指的那几行整段是空白也算红；
 现推锚点那一格同轮换成**整词**口径（名字两侧再是字母/数字/`_`/`$` 就不算它本身，`Rule` 坐在写着 `Rules` 的行上
 不算命中），并自带一把从现推锚点里截前缀的对照刀，口径退回子串的那一天那条断言为它红、同一份文档再现推锚点 16 条（其中手抄表没钉的 6 条由这一格自己数）、`DESIGN.md §N` 的"几处"那句自己、D1–D14 十四组与 `EXPECT_ROWS` 自钉。
 同一轮把两条漏口收进来：省掉文件名的续引借同一份文档里前面最近那条**带行号**的引用一起开文件（游标不被只提文件名的提及推动），
@@ -262,8 +262,8 @@ play 49 + conflict 37 + hint 198 + stats 45 = 507 条`，0 失败。
 但这个一致性只靠"两份代码相同"，没有断言钉。另注意 `js/engine/rng.js` 的 `makeRng`/`hash32`
 在当前出货路径上**没有被任何模块 import**（只用了 `dateSeed`）。
 
-`window.skyscraper` 与 `window.App` 是同一个对象的两个名字（`js/main.js:969-970`），
-验证台走的是玩家那套提交路径（`js/main.js:910` 的 `tap` / `js/main.js:914` 的 `stroke`，两者都挂在 `surface` 上），
+`window.skyscraper` 与 `window.App` 是同一个对象的两个名字（`js/main.js:1280-1283`），
+验证台走的是玩家那套提交路径（`js/main.js:1222` 的 `tap` / `js/main.js:1226` 的 `stroke`，两者都挂在 `surface` 上），
 所以场景绿了等于真状态机绿了。
 
 ## §9 成本表
@@ -324,13 +324,13 @@ play 49 + conflict 37 + hint 198 + stats 45 = 507 条`，0 失败。
    `makePuzzle` 里面（`generate.js:253` 的 `countSolutions` 调用），`balance.mjs:109-111` 的计时因此确实包住了它，
    "re-check included"那句不再说谎；但同一台机器本轮读到的是 **45 / 256 ms**，注释写的 38 / 194 是另一轮负载下的读数。
    **绝对毫秒数不该钉在注释里**这件事仍然成立，注释本轮未再改（改它是文案工作，不是正确性问题）。
-4. 出厂章节文案 `六阶的 Hall 家族` / "Hall 家族才解得开"（`tools/bake.mjs:95`、`js/main.js:564`）
-   与同一菜单打印的"这条规则开火 0 次（沉默）"（`js/main.js:587`）互相打脸；4 张 master 关实测深度 3。
+4. 出厂章节文案 `六阶的 Hall 家族` / "Hall 家族才解得开"（`tools/bake.mjs:95`、`js/main.js:796`）
+   与同一菜单打印的"这条规则开火 0 次（沉默）"（`js/main.js:857-859`）互相打脸；4 张 master 关实测深度 3。
 5. `tools/engine-test.mjs:17-25` 的章节清单列了 8 节，实际 `sec()` 调用是 9 个（缺
    `每一步都当场可验`，`tools/engine-test.mjs:658`），输出里也是 `章节 9 节`。
-6. `js/main.js:135` 说 `availBox()` 的修法是"让 6×6 在手机上守住 `js/theme.js` 写的 44px 触控下限"，
+6. `js/main.js:249` 说 `availBox()` 的修法是"让 6×6 在手机上守住 `js/theme.js` 写的 44px 触控下限"，
    但渲染器的下限其实是 `Cell.min = 26`（`js/render/board.js:15`、`js/theme.js:58`）；
-   `css/game.css:299` 与 `:446-449` 自己承认 390px 视口上曾经掉到 42px，并把 343 CSS px 当成守住 44 的先决条件
+   `css/game.css:345` 与 `:548-551` 自己承认 390px 视口上曾经掉到 42px，并把 343 CSS px 当成守住 44 的先决条件
    （这一条我按 `layoutFor()` 反解确认算术成立：`(343-24)/(6+2×0.62) = 44.06`），但**真机掉不掉穿仍未实测**。
 7. `11881a5` 带来的两条新缺口（本轮记下来，没修）：
    - **出题路径与验证台用的是两个预算，而且以后不会同时红**。运行时唯一的 `countSolutions` 调用点就是出题

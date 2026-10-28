@@ -5,6 +5,12 @@
 let ctx = null;
 let master = null;
 let enabled = true;
+// `held` is the pause / backgrounded latch. It is separate from `enabled` because the two are
+// released by different things: the player's mute switch, and the run's own state machine.
+let held = false;
+// Every oscillator this module has ever created. A muted or held tab must leave this number
+// untouched — that is the difference between "the volume is 0" and "the instrument is off".
+let voices = 0;
 // 静音偏好：读回存档。放在模块顶层，这样每次 init（首屏、开局、重开）都拿到同一个答案，
 // 重开一局不会把玩家的静音选择洗掉。
 try {

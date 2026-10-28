@@ -165,7 +165,7 @@
   仍未验证的：那一次是**本机 headless Chrome 打线上产物**，不是 Safari / Firefox / 实机；
   也没逐文件比对过 Pages 构建产物与仓内字节（`pages.yml` 的 `Assemble static site` 那一步决定线上有什么，
   本文对它只有一个断言：上面那次跑的是真站返回的 HTML 与模块）。
-- **读屏与键盘无障碍**：`aria-live` 状态行、`aria-pressed` 键盘、方向键选格都在（`index.html:111`、`index.html:115-118`），
+- **读屏与键盘无障碍**：`aria-live` 状态行、`aria-pressed` 键盘、方向键选格都在（`index.html:133`、`js/main.js:342-352`、`js/main.js:1142-1144`），
   也断言了 `--touch-min` 是 44px，但**没有用任何读屏器实测过**，也没有键盘-only 的完整通关实测。
 - **低端机时延 / 真实小屏几何**：本轮几何断言全部在 1280×1024 桌面窗口量到（`cell: 64`）。
   `layoutFor()` 的下限是 `Cell.min = 26` 而不是 44（`js/render/board.js:15`、`js/theme.js:58`），
@@ -219,9 +219,9 @@ bash tools/verify.sh                 # → === ALL GREEN（两种 URL 形态的�
 另一条把同一份文档当输入**现推锚点**——`path:NN` 旁边贴着写出来的那个反引号名字，必须出现在被指的那几行里，
 **表里没抄的那些也照核**。本轮现推锚点 16 条（口径：一条锚点是"哪一行 + 哪个名字"，同一处在两份文档里各写一次只算一条），
 其中手抄表没钉的 6 条：
-`js/engine/skyscraper.js:148` 的 `Rules`、`js/main.js:969-970` 的 `window.App`、`js/library.js:143-148` 的 `dateSeedAt`、`js/store.js:234-255` 的 `saveResume`、`js/main.js:910` 的 `tap`、`js/main.js:914` 的 `stroke`。
-这一格不是装饰：它上线这一轮就把旧文档里那句 `window.App` 的引用判了出来——那句赋值在 969 到 970 行，
-旧文档指的却是同一个文件里更早的 922，而 922 在一份 1089 行的文件里当然"不越界"，只有范围检查的那条腿一路绿。
+`js/engine/skyscraper.js:148` 的 `Rules`、`js/main.js:1280-1283` 的 `window.App`、`js/library.js:143-148` 的 `dateSeedAt`、`js/store.js:234-255` 的 `saveResume`、`js/main.js:1222` 的 `tap`、`js/main.js:1226` 的 `stroke`。
+这一格不是装饰：它上线这一轮就把旧文档里那句 `window.App` 的引用判了出来——那句赋值当时在 969 到 970 行，
+旧文档指的却是同一个文件里更早的 922，而 922 在一份当时 1089 行的文件里当然"不越界"，只有范围检查的那条腿一路绿。
 现推这一格认的是**整词**，不是子串：名字必须在被指的那几行里作为一个完整标识符出现，两侧再是字母、数字、
 `_`、`$` 就不算它本身（短名字会"出现在"任何碰巧含它的标识符里，那样的口径比它替掉的手抄表更弱，会把一次
 真的漂读成绿）。这一格也自带一把对照的刀，与范围检查那把同一手法：从现推的锚点里挑一条把名字截掉最后一格
