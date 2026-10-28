@@ -314,13 +314,13 @@ function flushResume() {
 }
 
 function startClock() {
-  paused = false;   // 新一局从"没暂停"开始；setPaused(false) 走的就是这条路
-  startedAt = Date.now();
-  clearInterval(ticker);
-  ticker = setInterval(() => {
-    el.time.textContent = fmtMs(clock());
-    if (pulse) draw();
-  }, 1000);
+  // The fixed-step sim is the only clock that moves now; the old 1 s ticker was a second source
+  // of truth and is gone. Reset the accumulated virtual seconds here so a resume never replays
+  // the wall-clock gap as a dt spike, and force the chip to repaint from zero.
+  sim.runSeconds = 0;
+  lastShownSecond = -1;
+  clockRunning = true;
+  startLoop();
 }
 
 function stopClock() {
@@ -651,9 +651,9 @@ function restart() {
   baseElapsed = 0;            // 耗时归零
   // 暂停中重开就保持停表，否则 startClock() 会把暂停期间憋下的墙钟一次性灌进计时。
   if (paused) {
-    startedAt = 0;
-    clearInterval(ticker);
-    ticker = 0;
+    // 暂停中重开就保持停表：stopClock() 只落账 baseElapsed 并把 sim.runSeconds 归零，
+    // 不会再起一个像旧 startedAt/ticker 那样的第二时钟。
+    stopClock();
   } else {
     startClock();             // 没暂停就重新起跑，重开后的计时是这一局自己的
   }
@@ -1368,10 +1368,10 @@ window.addEventListener('keydown', (ev) => {
 
 // ---- 暂停：真的把仿真冻住 ----
 //
-// 本仓唯一持续推进的仿真是耗时时钟（startedAt 跟 Date.now 走，ticker 是它唯一心跳）。
-// setPaused(true) 调 stopClock()：baseElapsed 落账、startedAt 归 0、ticker 停，
+// 本仓唯一持续推进的仿真是耗时时钟（sim.runSeconds 由定步长 rAF 累加，clockRunning 是它唯一心跳）。
+// setPaused(true) 调 stopClock()：baseElapsed 落账、sim.runSeconds 归零、clockRunning=false，
 // 此后 clock() 恒等于 baseElapsed，墙钟再走多久都加不上去。
-// setPaused(false) 调 startClock()：startedAt 复位成"从现在起"，
+// setPaused(false) 调 startClock()：sim.runSeconds 从 0 起，
 // 所以恢复后的第一帧不会把暂停期间憋下的墙钟一次性灌进来（没有 dt 尖峰）。
 //
 // 用 var 而不是 let：本块在文件末尾，而 startClock() 可能在它之前就被 begin() 调过；
